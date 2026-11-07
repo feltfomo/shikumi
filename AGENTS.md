@@ -38,5 +38,22 @@ sentence per change. No attribution trailers. Stage by name.
 
 ## Gates
 
-None yet. The first phase that lands code defines the gate here. Long runs go through the maintainer's
-run queue, as the standing instructions say.
+The gate is `nix flake check` from the repository root. It builds every check in the flake's `checks`
+output for the current system:
+
+- `format`: `cargo fmt --check` over the workspace and `nixfmt --check` over every `.nix` file.
+- `nix-lint`: statix and deadnix over every `.nix` file.
+- `clippy`: Clippy on every workspace target, warnings denied.
+- `nextest`: the workspace's tests under cargo-nextest, including a real Cargo baseline run over a tiny
+  generated workspace.
+- `links`: every relative link in a tracked Markdown file reaches a tracked path, and a fragment into a
+  Markdown file names one of its headings or HTML anchors.
+- `private-names`: no tracked file or path contains a protected name. The names are held only as salted
+  digests in `tools/repo-check`; add one with `repo-check digest`, which reads it from stdin.
+
+The checks see only what Git tracks, so a new file needs `git add --intent-to-add` before the gate sees
+it. For quick passes while working, run the same tools inside `nix develop`: `cargo nextest run`,
+`cargo clippy --all-targets`, and `git ls-files -z | cargo run -q -p repo-check -- links` (or `names`).
+
+A full gate run is a long run. It goes through the maintainer's run queue, as the standing instructions
+say.

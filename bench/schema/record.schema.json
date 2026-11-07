@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shikumi benchmark record",
+  "description": "one measured build, with `unit_count` agreeing with the fixture it names.",
+  "type": "object",
+  "properties": {
+    "candidate": {
+      "$ref": "#/$defs/Candidate"
+    },
+    "cpu_system_ns": {
+      "description": "system CPU time of the measured build and every process it waited for, in nanoseconds.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "cpu_user_ns": {
+      "description": "user CPU time of the measured build and every process it waited for, in nanoseconds.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "fixture": {
+      "$ref": "#/$defs/Fixture"
+    },
+    "incremental": {
+      "description": "whether rustc's incremental compilation was on; null for fixtures that run no compiler.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "iteration": {
+      "description": "which repetition of the scenario this is, from 0.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "machine": {
+      "$ref": "#/$defs/Machine"
+    },
+    "nix": {
+      "description": "the Nix implementation the candidate ran against; null when no Nix is in play, as for the\nCargo baseline.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NixImplementation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scenario": {
+      "$ref": "#/$defs/Scenario"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/Version1"
+    },
+    "started_at_unix_ms": {
+      "description": "when the measured build started, in milliseconds since the Unix epoch.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "transport": {
+      "description": "how work and outputs move between the candidate and the store, such as a daemon socket;\nnull when the candidate has no store transport.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Identifier"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "unit_count": {
+      "description": "the units the fixture holds: crates for a Rust workspace, units for an overhead graph. it\nmust match the fixture.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "wall_time_ns": {
+      "description": "elapsed wall-clock time of the measured build, in nanoseconds.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "candidate",
+    "cpu_system_ns",
+    "cpu_user_ns",
+    "fixture",
+    "incremental",
+    "iteration",
+    "machine",
+    "nix",
+    "scenario",
+    "schema_version",
+    "started_at_unix_ms",
+    "transport",
+    "unit_count",
+    "wall_time_ns"
+  ],
+  "$defs": {
+    "Candidate": {
+      "description": "the executor being measured.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "version": {
+          "description": "the version line the candidate's tool reports.",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "Fixture": {
+      "description": "what was built, with enough to regenerate it and a digest to prove the regeneration matches.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "description": "the digest of the generated tree before any scenario edit.",
+              "$ref": "#/$defs/Sha256"
+            },
+            "kind": {
+              "type": "string",
+              "const": "rust-workspace"
+            },
+            "parameters": {
+              "$ref": "#/$defs/RustWorkspaceParams"
+            },
+            "seed": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "seed",
+            "parameters",
+            "digest"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "description": "the digest of the unit graph's canonical JSON.",
+              "$ref": "#/$defs/Sha256"
+            },
+            "kind": {
+              "type": "string",
+              "const": "overhead"
+            },
+            "shape": {
+              "$ref": "#/$defs/Shape"
+            },
+            "units": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "shape",
+            "units",
+            "digest"
+          ]
+        }
+      ]
+    },
+    "Identifier": {
+      "description": "a lowercase name: a letter, then letters, digits and hyphens.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "LargeCrateParams": {
+      "type": "object",
+      "properties": {
+        "dependencies": {
+          "description": "how many of the other crates it depends on directly; at most `crates`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "functions_per_module": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "modules": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "modules",
+        "functions_per_module",
+        "dependencies"
+      ]
+    },
+    "Machine": {
+      "type": "object",
+      "properties": {
+        "arch": {
+          "description": "Rust's name for the CPU architecture, such as `x86_64` or `aarch64`.",
+          "$ref": "#/$defs/Text"
+        },
+        "cpu_model": {
+          "description": "the CPU model string; null where the platform doesn't report one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logical_cpus": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "name": {
+          "description": "the host's name, or the name given on the command line.",
+          "$ref": "#/$defs/Text"
+        },
+        "os": {
+          "description": "Rust's name for the operating system, such as `linux` or `macos`.",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "arch",
+        "cpu_model",
+        "logical_cpus",
+        "name",
+        "os"
+      ]
+    },
+    "NixEnvironment": {
+      "description": "where the Nix implementation ran, relative to the machine the record names.",
+      "oneOf": [
+        {
+          "description": "directly on the machine's own operating system.",
+          "type": "string",
+          "const": "host"
+        },
+        {
+          "description": "inside a virtual machine on that machine.",
+          "type": "string",
+          "const": "virtual-machine"
+        },
+        {
+          "description": "inside a container on that machine.",
+          "type": "string",
+          "const": "container"
+        }
+      ]
+    },
+    "NixFlavor": {
+      "type": "string",
+      "enum": [
+        "cppnix",
+        "determinate",
+        "lix"
+      ]
+    },
+    "NixImplementation": {
+      "description": "the Nix a candidate ran against, with what distinguishes two runs of the same version: where it\nran and the settings that change what a build costs.",
+      "type": "object",
+      "properties": {
+        "environment": {
+          "$ref": "#/$defs/NixEnvironment"
+        },
+        "implementation": {
+          "$ref": "#/$defs/NixFlavor"
+        },
+        "settings": {
+          "$ref": "#/$defs/NixSettings"
+        },
+        "version": {
+          "description": "the version the implementation reports, such as `2.95.4`.",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "implementation",
+        "version",
+        "environment",
+        "settings"
+      ]
+    },
+    "NixSettings": {
+      "description": "the settings that change what a build costs, as the implementation reported them for the run.\neach is read rather than assumed: a run whose settings weren't read can't be told apart from\nanother, so the contract has no \"unknown\" value.",
+      "type": "object",
+      "properties": {
+        "cores": {
+          "description": "cores offered to each build; 0 is Nix's own value for all of them.",
+          "$ref": "#/$defs/Setting_uint32"
+        },
+        "max_jobs": {
+          "$ref": "#/$defs/Setting_uint32"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/Setting_SandboxMode"
+        },
+        "use_cgroups": {
+          "description": "whether builds run in their own cgroups.",
+          "$ref": "#/$defs/Setting_boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sandbox",
+        "use_cgroups",
+        "max_jobs",
+        "cores"
+      ]
+    },
+    "Percent": {
+      "type": "integer",
+      "maximum": 100,
+      "minimum": 0
+    },
+    "RustWorkspaceParams": {
+      "description": "the shape of a generated workspace. the types hold each count above zero; [`Self::validate`]\nholds the rules between counts, and a record checks them when it's read.",
+      "type": "object",
+      "properties": {
+        "crates": {
+          "description": "crates besides the large one, the hub included. must exceed `depth`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "dependencies_per_crate": {
+          "description": "the most direct dependencies a crate takes: one from the layer below, the rest from any\nlower layer.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "depth": {
+          "description": "the longest dependency chain, in edges from a top-layer crate down to the hub.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "functions_per_module": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "generic_percent": {
+          "description": "the share of functions that are generic, so their code is generated in the calling crate.",
+          "$ref": "#/$defs/Percent"
+        },
+        "large_crate": {
+          "description": "one crate much larger than the rest, for work below the crate; null for none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LargeCrateParams"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modules_per_crate": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "crates",
+        "dependencies_per_crate",
+        "depth",
+        "functions_per_module",
+        "generic_percent",
+        "large_crate",
+        "modules_per_crate"
+      ]
+    },
+    "SandboxMode": {
+      "type": "string",
+      "enum": [
+        "enabled",
+        "disabled",
+        "relaxed"
+      ]
+    },
+    "Scenario": {
+      "oneOf": [
+        {
+          "description": "a build from an empty target directory.",
+          "type": "string",
+          "const": "cold"
+        },
+        {
+          "description": "a build straight after a successful one, with nothing changed.",
+          "type": "string",
+          "const": "no-op"
+        },
+        {
+          "description": "a build after one private function's body changed.",
+          "type": "string",
+          "const": "one-function-edit"
+        },
+        {
+          "description": "a build after a public signature changed in a crate many others depend on.",
+          "type": "string",
+          "const": "public-signature-edit"
+        }
+      ]
+    },
+    "Setting_SandboxMode": {
+      "description": "a setting's value for a run, or the fact that the implementation has no such setting.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/SandboxMode"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unsupported"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      ]
+    },
+    "Setting_boolean": {
+      "description": "a setting's value for a run, or the fact that the implementation has no such setting.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unsupported"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      ]
+    },
+    "Setting_uint32": {
+      "description": "a setting's value for a run, or the fact that the implementation has no such setting.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unsupported"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      ]
+    },
+    "Sha256": {
+      "description": "a SHA-256 digest in lowercase hex.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Shape": {
+      "oneOf": [
+        {
+          "description": "independent units with no inputs, for throughput.",
+          "type": "string",
+          "const": "wide"
+        },
+        {
+          "description": "each unit takes the one before it as its only input, for latency.",
+          "type": "string",
+          "const": "chain"
+        }
+      ]
+    },
+    "Text": {
+      "description": "non-blank text.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "Version1": {
+      "const": 1
+    }
+  }
+}
