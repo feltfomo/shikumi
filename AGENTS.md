@@ -5,12 +5,10 @@ disagree, this file wins.
 
 ## Where things live
 
-- `docs/spec.md` is what Shikumi provides, with a status per capability.
-- `docs/architecture.md` is how it's put together: owners, flows, invariants and contracts.
-- `docs/efforts/<effort>/` holds each effort's page and roadmap. A completed roadmap is never
-  overwritten; a new effort gets a new directory.
-- `docs/research/` holds the research reports the design rests on. They're evidence, read-only once
-  landed. A later finding goes in a new report that links to the one it supersedes.
+- Plans, roadmaps, research and batons live in the maintainer's planning repository, not here. A
+  kickoff gives an implementer what it needs from them.
+- `docs/` is for product documentation: what Shikumi does and how to use it. A band's design moves here
+  once it's implemented.
 - `.runtime/` is gitignored scratch and evidence. Phase evidence is kept under
   `.runtime/<effort>/<phase>/` in the main checkout.
 
