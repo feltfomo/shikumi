@@ -6,7 +6,11 @@ disagree, this file wins.
 ## Where things live
 
 - Plans, roadmaps and research live outside this repository. Nothing here depends on them.
-- `docs/` is product documentation: what Shikumi does and how to use it.
+- `docs/` is product documentation: what Shikumi does and how to use it. Its front door is
+  [docs/README.md](docs/README.md). [The philosophy](docs/philosophy.md) holds the laws behind these
+  rules. Read [contributing](docs/contributing.md) before any change, [writing](docs/writing.md) before
+  any doc or comment, and [working as an agent](docs/ai/working.md) if you're one. The Nix and Rust
+  style guides are in [docs/reference/](docs/reference/).
 - `.runtime/` is gitignored. Scratch work and anything you keep as evidence of a run go there, never in
   a tracked path.
 

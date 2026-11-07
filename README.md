@@ -6,6 +6,9 @@ rebuilds only the units it actually changed. The projects in a repository declar
 Shikumi derives their dev shells, verbs, hooks, services, formatting and build graph from those
 declarations.
 
-Status: design approved, nothing implemented yet.
+Status: design approved; the product isn't implemented yet. The repository has its dev shell, its gate
+and the benchmark harness that every speed claim will be measured with.
 
-Licence: MPL-2.0 (decided; the licence file lands with the first code).
+The docs start at [docs/README.md](docs/README.md).
+
+Licence: MPL-2.0. The text is in [LICENSE](LICENSE).
