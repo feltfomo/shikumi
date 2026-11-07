@@ -127,6 +127,11 @@ impl StorePath {
     pub fn name(&self) -> &str {
         &self.0[HASH_PART_LEN + 1..]
     }
+
+    /// the name as a [`StoreName`], which it already is: a path is only built from a valid one.
+    pub fn store_name(&self) -> StoreName {
+        StoreName(self.name().to_owned())
+    }
 }
 
 impl fmt::Display for StorePath {

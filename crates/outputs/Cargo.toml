@@ -1,0 +1,17 @@
+[package]
+name = "shikumi-outputs"
+version = "0.1.0"
+description = "What the core does with built outputs: re-addresses them for early cutoff and roots them against garbage collection"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+shikumi-derivation.workspace = true
+shikumi-transport.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

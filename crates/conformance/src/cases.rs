@@ -11,12 +11,13 @@ use std::io::Cursor;
 
 use shikumi_derivation::{
     Derivation, FixedHash, Ingestion, NarNode, OutputName, Outputs, References, Sha256,
-    SourceAddress, StoreDerivation, StoreDir, StoreName, StorePath,
+    SourceAddress, StoreDerivation, StoreDir, StorePath,
 };
-use shikumi_transport::{BuildTarget, SourceNar, StoreTransport, Trust};
+use shikumi_outputs::output_address;
+use shikumi_transport::{BuildTarget, PathInfo, SourceNar, StoreTransport, Trust};
 
-use crate::HarnessError;
 use crate::report::Report;
+use crate::{HarnessError, Salt};
 
 const SH: &str = "/bin/sh";
 
@@ -37,6 +38,7 @@ pub(crate) async fn run<T: StoreTransport>(
     store: &T,
     dir: &StoreDir,
     system: &str,
+    salt: &Salt,
     report: &mut Report,
 ) -> Result<(), HarnessError> {
     let trust = match store.trust().await? {
@@ -46,7 +48,7 @@ pub(crate) async fn run<T: StoreTransport>(
     };
     report.push("untrusted", "client trust", "untrusted", trust);
 
-    let mut sources = sources(dir)?;
+    let mut sources = sources(dir, salt)?;
     // dependents come first, so the transport has to order the batch itself. the NAR bytes move
     // into their readers; only the addresses are needed after the add.
     let batch: Vec<SourceNar> = sources
@@ -54,6 +56,7 @@ pub(crate) async fn run<T: StoreTransport>(
         .rev()
         .map(|source| SourceNar {
             address: source.address.clone(),
+            nar_size: source.nar.len() as u64,
             nar: Box::new(Cursor::new(std::mem::take(&mut source.nar))),
         })
         .collect();
@@ -102,11 +105,27 @@ pub(crate) async fn run<T: StoreTransport>(
         );
     }
 
-    wrong_address(store, dir, "wrong-address", References::default(), report).await?;
+    wrong_address(
+        store,
+        dir,
+        salt,
+        "wrong-address",
+        References::default(),
+        report,
+    )
+    .await?;
     let plain_only = References::new(BTreeSet::from([sources[0].address.path().clone()]));
-    wrong_address(store, dir, "wrong-address-referring", plain_only, report).await?;
+    wrong_address(
+        store,
+        dir,
+        salt,
+        "wrong-address-referring",
+        plain_only,
+        report,
+    )
+    .await?;
 
-    let cases = derivations(dir, system, &sources)?;
+    let cases = derivations(dir, system, salt, &sources)?;
     // dependents first again, for the same reason.
     let ordered: Vec<&Case> = cases.iter().rev().collect();
     let drvs: Vec<&StoreDerivation> = ordered.iter().map(|case| &case.drv).collect();
@@ -161,7 +180,7 @@ pub(crate) async fn run<T: StoreTransport>(
     }
     let output_paths: Vec<StorePath> = outputs.iter().map(|(_, _, path, _)| path.clone()).collect();
     let infos = store.query_path_info(&output_paths).await?;
-    for ((case, name, path, contents), info) in outputs.iter().zip(&infos) {
+    for ((case, name, _, contents), info) in outputs.iter().zip(&infos) {
         let expected = NarNode::regular(false, contents.to_vec()).to_nar()?.hash;
         report.push(
             case,
@@ -170,16 +189,16 @@ pub(crate) async fn run<T: StoreTransport>(
             info.nar_hash.to_hex(),
         );
         if *case == "self-reference" {
-            self_reference(dir, path, info.nar_hash, &info.references, report)?;
+            self_reference(dir, info, report);
         }
     }
     Ok(())
 }
 
-fn sources(dir: &StoreDir) -> Result<Vec<Source>, HarnessError> {
+fn sources(dir: &StoreDir, salt: &Salt) -> Result<Vec<Source>, HarnessError> {
     let make = |case, name: &str, node: NarNode, references: References| {
         let nar = node.to_nar()?;
-        let address = dir.source_address(&StoreName::new(name)?, nar.hash, references)?;
+        let address = dir.source_address(&salt.name(name)?, nar.hash, references)?;
         Ok::<_, HarnessError>(Source {
             case,
             address,
@@ -267,19 +286,21 @@ fn sources(dir: &StoreDir) -> Result<Vec<Source>, HarnessError> {
 async fn wrong_address<T: StoreTransport>(
     store: &T,
     dir: &StoreDir,
+    salt: &Salt,
     case: &'static str,
     references: References,
     report: &mut Report,
 ) -> Result<(), HarnessError> {
     let nar = NarNode::regular(false, case.as_bytes().to_vec()).to_nar()?;
     let wrong = StoreDir::new("/shikumi/wrong-store")?.source_address(
-        &StoreName::new(case)?,
+        &salt.name(case)?,
         nar.hash,
         references,
     )?;
     let added = store
         .add_sources(vec![SourceNar {
             address: wrong.clone(),
+            nar_size: nar.bytes.len() as u64,
             nar: Box::new(Cursor::new(nar.bytes)),
         }])
         .await;
@@ -305,20 +326,12 @@ async fn wrong_address<T: StoreTransport>(
 
 /// a built output that refers to itself can't be re-added as a source. the daemon's references
 /// say whether it refers to itself, and Shikumi's address computation must refuse exactly then.
-fn self_reference(
-    dir: &StoreDir,
-    path: &StorePath,
-    nar_hash: Sha256,
-    references: &BTreeSet<StorePath>,
-    report: &mut Report,
-) -> Result<(), HarnessError> {
-    let split = References::of(path, references.iter().cloned());
-    let computed = match dir.source_address(&StoreName::new(path.name())?, nar_hash, split.clone())
-    {
+fn self_reference(dir: &StoreDir, info: &PathInfo, report: &mut Report) {
+    let computed = match output_address(dir, info) {
         Err(_) => "refused".to_owned(),
         Ok(address) => dir.display(address.path()),
     };
-    let daemon = if split.has_self_reference() {
+    let daemon = if info.references.contains(&info.path) {
         "refused"
     } else {
         "no self-reference reported"
@@ -329,12 +342,12 @@ fn self_reference(
         computed,
         daemon,
     );
-    Ok(())
 }
 
 fn derivations(
     dir: &StoreDir,
     system: &str,
+    salt: &Salt,
     sources: &[Source],
 ) -> Result<Vec<Case>, HarnessError> {
     let ia = |name: &str, outputs: &[&str]| -> Result<Derivation, HarnessError> {
@@ -343,7 +356,7 @@ fn derivations(
             .map(|output| OutputName::new(*output))
             .collect::<Result<_, _>>()?;
         Ok(Derivation::new(
-            StoreName::new(name)?,
+            salt.name(name)?,
             Outputs::InputAddressed(outputs),
             system,
             SH,
@@ -351,7 +364,7 @@ fn derivations(
     };
     let fixed = |name: &str, hash: FixedHash| -> Result<Derivation, HarnessError> {
         Ok(Derivation::new(
-            StoreName::new(name)?,
+            salt.name(name)?,
             Outputs::Fixed(hash),
             system,
             SH,

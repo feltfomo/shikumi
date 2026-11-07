@@ -22,9 +22,10 @@
     let
       inherit (nixpkgs) lib;
 
+      # every Linux, and macOS on Apple silicon. the pinned nixpkgs no longer builds for Intel macOS,
+      # and Shikumi's Nix side depends on that nixpkgs alone.
       systems = [
         "aarch64-darwin"
-        "x86_64-darwin"
         "aarch64-linux"
         "x86_64-linux"
       ];

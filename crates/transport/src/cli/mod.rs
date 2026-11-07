@@ -8,6 +8,10 @@
 //! - sources go through a local binary cache and `nix copy --no-recursive --from`.
 //! - builds, validity and path info use `nix-store`, whose output is the same on every
 //!   implementation, with many paths per invocation.
+//! - a NAR is read from `nix-store --dump`, and a root is made by `nix-store --realise
+//!   --add-root`, which makes the link and registers it with the daemon as an indirect root on
+//!   every implementation (`IndirectRootStore::addPermRoot` in CppNix 2.35.3
+//!   `src/libstore/indirect-root-store.cc`, and in Lix 2.95.4 and 2.96.0 `lix/libstore/gc.cc`).
 
 mod cache;
 mod derivation_json;
@@ -21,8 +25,12 @@ use std::path::{Path, PathBuf};
 use shikumi_derivation::{OutputName, Sha256, StoreDerivation, StoreDir, StorePath};
 
 use self::implementation::Dialect;
-use self::process::{batches, describe, run, run_all, run_graph};
-use crate::{BuildTarget, PathInfo, SourceNar, StoreTransport, TransportError, Trust};
+use self::process::{batches, describe, run, stream};
+use crate::jobs::{run_all, run_graph};
+use crate::nar::{Lazy, Verified};
+use crate::{
+    BuildTarget, GcRoot, NarReader, PathInfo, SourceNar, StoreTransport, TransportError, Trust,
+};
 
 pub use self::implementation::{Family, Implementation};
 
@@ -281,6 +289,32 @@ impl StoreTransport for CliStore {
                 })
             })
             .collect()
+    }
+
+    fn read_nar(&self, info: &PathInfo) -> NarReader {
+        let path = self.store_dir.display(&info.path);
+        let args = vec!["--dump".to_owned(), path.clone()];
+        let opening = async move {
+            stream("nix-store", &args).map(|streamed| Box::new(streamed) as NarReader)
+        };
+        Box::new(Verified::new(Lazy::new(Box::pin(opening)), path, info))
+    }
+
+    async fn add_roots(&self, roots: &[GcRoot]) -> Result<(), TransportError> {
+        // one root per invocation: given several paths, `--add-root` numbers the links itself.
+        let jobs = roots
+            .iter()
+            .map(|root| {
+                let args = vec![
+                    "--realise".to_owned(),
+                    self.store_dir.display(&root.path),
+                    "--add-root".to_owned(),
+                    root.link.to_string_lossy().into_owned(),
+                ];
+                async move { run("nix-store", &args, None).await.map(drop) }
+            })
+            .collect();
+        run_all(self.parallelism, jobs).await.map(drop)
     }
 }
 

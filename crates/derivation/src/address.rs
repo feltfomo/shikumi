@@ -93,12 +93,39 @@ impl SourceAddress {
         &self.path
     }
 
+    /// what the daemon is told this path's content is, which it recomputes the path from.
+    pub fn content_address(&self) -> ContentAddress {
+        ContentAddress::Recursive(self.nar_hash)
+    }
+
     pub fn nar_hash(&self) -> &Sha256 {
         &self.nar_hash
     }
 
     pub fn references(&self) -> &BTreeSet<StorePath> {
         &self.references
+    }
+}
+
+/// how a content-addressed path's bytes are described to a daemon. the daemon recomputes the path
+/// from this and the references, and an untrusted client's path that doesn't reproduce is refused,
+/// so this and the path computed here have to agree; both come from this module. it renders as
+/// `renderContentAddress` does in CppNix 2.35.3 `src/libstore/content-address.cc`, which Lix 2.95.4
+/// and 2.96.0 parse alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ContentAddress {
+    /// a text file, such as a `.drv`, hashed as it is: `text:sha256:<nix32>`.
+    Text(Sha256),
+    /// NAR bytes hashed recursively, as a source is: `fixed:r:sha256:<nix32>`.
+    Recursive(Sha256),
+}
+
+impl fmt::Display for ContentAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text(hash) => write!(f, "text:sha256:{}", hash.to_base32()),
+            Self::Recursive(hash) => write!(f, "fixed:r:sha256:{}", hash.to_base32()),
+        }
     }
 }
 
@@ -161,19 +188,14 @@ impl StoreDir {
     pub(crate) fn drv_path<'a>(
         &self,
         name: &str,
-        aterm: &[u8],
+        aterm_hash: &Sha256,
         sources: &'a BTreeSet<StorePath>,
         derivations: impl Iterator<Item = &'a StorePath>,
     ) -> StorePath {
         let mut references: Vec<&StorePath> = sources.iter().chain(derivations).collect();
         references.sort_unstable();
         references.dedup();
-        self.make_store_path(
-            "text",
-            references,
-            &Sha256::digest(aterm),
-            &format!("{name}.drv"),
-        )
+        self.make_store_path("text", references, aterm_hash, &format!("{name}.drv"))
     }
 
     pub fn fixed_output_path(&self, name: &str, hash: &FixedHash) -> StorePath {
@@ -297,6 +319,25 @@ mod tests {
         assert_eq!(
             address.path().base_name(),
             "i9pmrzmpshapij2kin22pff6fc2adavx-hello.txt"
+        );
+    }
+
+    // the content address of the last path info in CppNix 2.35.3's
+    // `src/libstore-tests/data/worker-protocol/valid-path-info-1.16.bin`, whose hash is
+    // `sha256-EMIJ+giQ/gLIWoxmPKjno3zHZrxbGymgzGGyZvZBIdM=`. a change here makes the daemon refuse
+    // every source and `.drv` Shikumi adds.
+    #[test]
+    fn a_content_address_renders_as_nix_writes_it() {
+        let hash =
+            Sha256::parse_hex("10c209fa0890fe02c85a8c663ca8e7a37cc766bc5b1b29a0cc61b266f64121d3")
+                .unwrap();
+        assert_eq!(
+            ContentAddress::Recursive(hash).to_string(),
+            "fixed:r:sha256:1lr187v6dck1rjh2j6svpikcfz53wyl3qrlcbb405zlh13x0khhh"
+        );
+        assert_eq!(
+            ContentAddress::Text(hash).to_string(),
+            "text:sha256:1lr187v6dck1rjh2j6svpikcfz53wyl3qrlcbb405zlh13x0khhh"
         );
     }
 

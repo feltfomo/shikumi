@@ -7,7 +7,7 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 
 | Area                                                          | What a repository gets                                    | Status          |
 | ------------------------------------------------------------- | --------------------------------------------------------- | --------------- |
-| [Where it runs](#where-it-runs)                               | CppNix, Determinate Nix and Lix, on Linux and macOS       | Accepted target |
+| [Where it runs](#where-it-runs)                               | CppNix, Determinate Nix and Lix, on Linux and macOS on Apple silicon | Accepted target |
 | [Declarations](#declarations)                                 | projects that declare themselves, validated in one pass   | Accepted target |
 | [Registry document](#registry-document)                       | one versioned JSON view of every project                  | Accepted target |
 | [Packages and toolchains](#packages-overrides-and-toolchains) | one catalog, one owner per setting                        | Accepted target |
@@ -24,7 +24,7 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | [Formatting](#formatting)                                     | one formatter per file, cache shared across worktrees     | Accepted target |
 | [Formatting mechanism](#formatting-mechanism)                 | treefmt wrapped, or Shikumi's own                         | Open            |
 | [Rust tests](#testing-shikumi-itself)                         | Shikumi's own Rust tested under nextest                   | Current         |
-| [Store path conformance](#store-path-conformance)             | Shikumi's store paths checked against all three, on Linux | Current         |
+| [Store conformance](#store-conformance)                       | paths, transports and cutoff checked against all three    | Current         |
 | [Nix tests](#testing-shikumi-itself)                          | nix-unit tests of the Nix side                            | Accepted target |
 | [Benchmark fixtures](#benchmark-fixtures)                     | seeded fixtures, the Cargo baseline, the result record    | Current         |
 | [Out of scope](#out-of-scope)                                 | what Shikumi deliberately doesn't do                      | Out of scope    |
@@ -36,11 +36,13 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | CppNix and Determinate Nix | primary                                                 | Accepted target |
 | Lix                        | supported; all three implementations have to work       | Accepted target |
 | Linux, any distribution    | target platform                                         | Accepted target |
-| macOS                      | target platform, unverified until a test machine exists | Accepted target |
+| macOS on Apple silicon     | target platform, unverified until a test machine exists | Accepted target |
+| macOS on Intel             | not a platform                                          | Out of scope    |
 | Windows                    | not a platform                                          | Out of scope    |
 
 Shikumi uses only what the three Nix implementations share, runs as an untrusted daemon user and
-never changes the host's Nix. Shikumi itself doesn't use devenv, and a repository that adopts it
+never changes the host's Nix. Intel macOS is out because the pinned nixpkgs no longer builds for it,
+and Shikumi's Nix side depends on that nixpkgs alone. Shikumi itself doesn't use devenv, and a repository that adopts it
 needs no devenv either: Shikumi owns what devenv would have done.
 
 ## Declarations
@@ -119,13 +121,15 @@ Status: accepted target.
 | ---------------------------------------------------------- | --------------- |
 | Cut points per stage                                       | Accepted target |
 | Early cutoff on all three implementations                  | Accepted target |
+| Re-addressing, the mechanism early cutoff rests on         | Current         |
 | Evaluation outside the per-edit loop                       | Accepted target |
 | Third-party dependencies from the lock                     | Accepted target |
 | Escape hatches for generated code and build-time plugins   | Accepted target |
 | Non-redistributable outputs                                | Accepted target |
 | Affected query, dependency queries, "why did this rebuild" | Accepted target |
 | Build traces                                               | Accepted target |
-| GC roots and eviction                                      | Accepted target |
+| One rooted manifest of live outputs                        | Current         |
+| Root generations per worktree, and eviction                | Accepted target |
 | Remote cache and builders                                  | Accepted target |
 | Provenance                                                 | Accepted target |
 
@@ -135,6 +139,11 @@ Status: accepted target.
 - **Early cutoff.** A rebuilt unit whose output is byte-identical stops the rebuild there, on CppNix,
   Determinate Nix and Lix alike. Shikumi does this itself by re-adding outputs as content-addressed
   store paths, without content-addressed derivations.
+- **Re-addressing** is current: given built outputs, Shikumi computes each one's content-addressed
+  path from the NAR hash and references the daemon records, and sends bytes only for a path that
+  isn't valid yet. An output that refers to its own store path is refused, naming the output. The
+  conformance checks prove the cutoff end to end on every implementation; the scheduler that will
+  drive it isn't built.
 - **Evaluation outside the per-edit loop.** A one-file edit costs work proportional to the units it
   touches, not to the size of the repository.
 - **Third-party dependencies** are fixed-output derivations from the lock, fetched one by one.
@@ -149,7 +158,9 @@ Status: accepted target.
 - **Traces.** Every build can record where its time went: evaluation, `.drv` writing, store round
   trips, sandbox setup, compiling and linking. Traces are maintained product, not a debugging aid.
 - **GC roots.** Each worktree's live outputs stay rooted through one manifest per build. Shikumi owns
-  eviction, since Nix GC has no notion of least recently used.
+  eviction, since Nix GC has no notion of least recently used. One manifest and its indirect root are
+  current, through the local daemon only: a root is a link on the daemon's machine, so over `ssh-ng`
+  it's refused. Generations, the `.shikumi/roots/` layout and eviction are targets.
 - **Remote cache and builders.** Shikumi pushes to and substitutes from binary caches, and sends
   builds to remote daemons over `ssh-ng`, as an untrusted daemon user. Two things need the machine's
   admin, and Shikumi detects and reports each when it's missing: a Shikumi cache in
@@ -294,41 +305,69 @@ above, including a missing formatter failing only its own scope.
 | ------------------------------------------------------------------------------------ | --------------- |
 | Nix evaluation and module behavior tested in pure Nix with nix-unit and flake checks | Accepted target |
 | Rust behavior tested with nextest                                                    | Current         |
-| Store paths conformance-tested against CppNix, Determinate Nix and Lix, on Linux     | Current         |
+| Store paths, transports and cutoff conformance-tested against all three, on Linux    | Current         |
 | Benchmark fixtures                                                                   | Current         |
 
 The gate's `nextest` check runs every workspace test today. nix-unit is pinned in the flake, and the
 first Nix logic lands with its tests.
 
-### Store path conformance
+### Store conformance
 
 Status: current on Linux; unverified on macOS.
 
-Every store path Shikumi computes has to equal, bit for bit, what each Nix implementation computes.
-The gate checks that against four implementations, each in its own NixOS VM:
+Every store path Shikumi computes has to equal, bit for bit, what each Nix implementation computes,
+and both store transports, early cutoff and roots have to work against each one as a user the daemon
+doesn't trust. The gate checks that against four implementations, each in its own NixOS VM:
 
-| Implementation  | Version | Built from                                  |
-| --------------- | ------- | ------------------------------------------- |
-| CppNix          | 2.35.3  | the pinned nixpkgs                          |
-| Determinate Nix | 3.24.2  | its source tag, with nixpkgs' Nix packaging |
-| Lix             | 2.95.4  | the pinned nixpkgs                          |
-| Lix             | 2.96.0  | the pinned nixpkgs                          |
+| Implementation  | Version | Built from                                  | Worker protocol |
+| --------------- | ------- | ------------------------------------------- | --------------- |
+| CppNix          | 2.35.3  | the pinned nixpkgs                          | 1.37            |
+| Determinate Nix | 3.24.2  | its source tag, with nixpkgs' Nix packaging | 1.37            |
+| Lix             | 2.95.4  | the pinned nixpkgs                          | 1.35            |
+| Lix             | 2.96.0  | the pinned nixpkgs                          | 1.35            |
 
-In each VM, a user the daemon doesn't trust runs `shikumi-conformance`. It computes paths with the
-derivation crate, sends them through the store transport and records its value beside the daemon's
-for every check:
+In each VM, a user the daemon doesn't trust runs `shikumi-conformance` three times: through the Nix
+CLI, through the worker protocol on the daemon's socket, and through `ssh-ng` to the same machine as
+the same user. Each run computes paths with the derivation crate, sends them through its transport
+and records its value beside the daemon's for every check:
 
 - **`.drv` paths and the file's exact bytes**, for derivations with no inputs, input sources, input
   derivations two levels deep, several outputs, flat and recursive fixed outputs, a fixed output with
   inputs, inputs that share a hash modulo, and every string escape the `.drv` format has.
-- **Output paths**, as a real build of each derivation reports them, and each output's NAR hash.
+- **Output paths**, as a real build of each derivation reports them, and each output's NAR hash. One
+  derivation is built alike in all three runs, and the VM test checks that their reports agree on it.
 - **Content-addressed source paths**, with and without references, as the daemon registers them. A
   path computed wrong is refused, and an output that refers to itself is refused as a source.
-- **Trust**: the daemon reports the user as untrusted.
+- **NAR reads**: a built output's NAR, streamed back, hashes as the bytes its build wrote.
+- **Early cutoff**: a unit rebuilt from a changed derivation with the same bytes re-addresses to the
+  path it had, sending no NAR bytes, so its dependent's `.drv` is the one already there and its output
+  is valid with nothing built. A changed output gives a new address and a dependent that has to build.
+  An output that refers to itself is refused, naming it, and nothing is registered for it.
+- **Cancellation**: a build whose future is dropped stops its builder, and its output never appears.
+- **Roots**: a manifest rooted through an indirect root keeps itself and everything it names through
+  a collection that takes an unrooted control added the same way. Over `ssh-ng` the root is refused.
+- **Trust**: the daemon reports the user as untrusted, on the socket and on the far side of `ssh-ng`.
 
-The harness exits non-zero when any value differs; `--perturb <case>` alters one case's computed
-values to show that it does. The checks need KVM, so they don't run on macOS. The Determinate Nix
-build leaves out its wasm builtins, Sentry and OpenTelemetry, none of which touch the store.
+What each daemon answers a user it doesn't trust, from the runs on the socket and over `ssh-ng`:
+
+| Operation                                                   | CppNix 2.35.3 and Determinate Nix 3.24.2 | Lix 2.95.4 and 2.96.0 |
+| ----------------------------------------------------------- | ---------------------------------------- | --------------------- |
+| Add a content-addressed path, with references or without   | accepted when the address reproduces     | the same              |
+| Add a `.drv`, then build it                                 | accepted                                 | the same              |
+| Build an input-addressed derivation it's sent whole         | refused, whether or not it's in the store | the same             |
+| Register an indirect root                                   | accepted                                 | the same              |
+| Collect garbage                                             | accepted                                 | the same              |
+| Make a permanent root on the daemon's side                  | refused on the socket, accepted over `ssh-ng` | no such operation |
+
+Shikumi relies on the first five, which are checks; the last two rows are notes. A permanent root
+goes through over `ssh-ng` on CppNix and Determinate Nix because their `nix-daemon --stdio` runs
+operations itself, as trusted, against the daemon behind it, which still judges each path it's sent.
+Shikumi makes the link and registers an indirect root instead, the same on every implementation.
+
+The harness exits non-zero when any value differs. `--perturb <case>` alters one case's computed
+values, and `--remove readdressing` or `--remove root` leaves that step out, to show the checks fail.
+The checks need KVM, so they don't run on macOS. The Determinate Nix build leaves out its wasm
+builtins, Sentry and OpenTelemetry, none of which touch the store.
 
 ## Benchmark fixtures
 

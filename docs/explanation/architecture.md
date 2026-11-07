@@ -7,8 +7,9 @@ Most of the product isn't built yet. Everything here is an accepted target unles
 and the sections marked **open** are mechanisms still being chosen, each with what decides it. What
 exists today is the repository's foundation (the gate, its checks in `tools/repo-check/`, and
 [the benchmark harness](#the-benchmark-harness)) and the base the core builds on: the path computation
-of [derivation synthesis](#derivation-synthesis) and the CLI implementation of
-[the store transport](#store-transport). Those are current.
+of [derivation synthesis](#derivation-synthesis), both implementations of
+[the store transport](#store-transport), and the re-addressing and rooting that
+[early cutoff](#early-cutoff) and [roots](#caches-and-roots) rest on. Those are current.
 
 ## Shape
 
@@ -147,7 +148,7 @@ and computes the hash modulo, the output paths, fixed-output paths (flat and rec
 a source from its NAR hash, name and references, refusing a self-reference. The store transport and
 the conformance harness take paths from it and never derive one. The `conformance-*` gate checks
 compare it with CppNix 2.35.3, Determinate Nix 3.24.2 and Lix 2.95.4 and 2.96.0, each in a NixOS VM,
-as [the capability page](../reference/capabilities.md#store-path-conformance) lists.
+as [the capability page](../reference/capabilities.md#store-conformance) lists.
 
 It refuses what not every implementation handles the same way: environment variable `__json`, which
 CppNix reserves for structured attributes; a system string holding a quote or a backslash, which
@@ -170,8 +171,18 @@ experimental, so Shikumi does early cutoff itself.
 Cutoff is only as good as the backends' reproducibility, so every backend has a determinism check
 that builds a unit twice in separate sandboxes and compares the bytes.
 
+**Current:** step 2 is `readdress` in the `shikumi-outputs` crate, in `crates/outputs/`, the one owner
+of re-addressing. It works over either transport: one path-info query and one validity query for a
+whole batch, then one add carrying only the NARs whose address isn't valid, each streamed from the
+daemon back into it. It reports the NAR bytes it sent per output, so a cutoff is measured rather than
+assumed. The conformance checks build a unit, re-address it, rebuild it with a changed derivation and
+the same bytes, and check that the second re-add sent nothing and the dependent's `.drv` and output
+were already there; a changed output has to give a new dependent. The scheduler that calls it isn't
+built.
+
 **No self-references.** A content-addressed source path can't reference itself, so a re-addressed
-unit output must contain no reference to its own store path. Each backend's determinism check also
+unit output must contain no reference to its own store path. `readdress` refuses such an output
+before adding anything, naming it. Each backend's determinism check also
 scans the output for its own path. Units whose output has to reference itself, such as a shared
 library with a RUNPATH to itself or a wrapper script, are leaves that aren't re-addressed. They need
 no cutoff, because nothing in the graph depends on their bytes.
@@ -220,22 +231,37 @@ sandbox on macOS, so its cost is measured per platform, not on Linux alone.
 ### Store transport
 
 All daemon access goes through one trait, `StoreTransport` in `crates/transport/`, with two
-implementations. The trait is current. Every operation takes a batch and is async, so one runtime can
-drive builds, queries and adds side by side: adding `.drv` files, adding content-addressed sources,
-building outputs, querying validity and querying path info. A source's NAR arrives as a reader and
-is streamed, so memory holds what's in flight rather than the batch.
+implementations; the trait and both are current. Every operation takes a batch and is async, so one
+runtime can drive builds, queries and adds side by side: adding `.drv` files, adding
+content-addressed sources, building outputs, querying validity and path info, and registering roots.
+Reading a valid path's NAR is the one per-path operation, because both the CLI and the protocol
+stream one NAR at a time. A NAR is streamed both ways, so memory holds what's in flight rather than
+the batch, and a NAR reader opens nothing until it's read, so a batch of them holds one connection at
+a time.
 
-- **Worker protocol.** Accepted target. The only interface CppNix, Determinate Nix and Lix all share, frozen at the
-  2.18 level in Lix. Over a unix socket locally and `ssh-ng` remotely. `psyclyx/fix` already runs
-  against both CppNix and Lix daemons. snix's `nix-compat` has framing and ATerm code to reuse or
-  cross-check.
-- **CLI.** Current. It always works and serves as the conformance oracle. `.drv` files go through
+- **Worker protocol.** `WorkerStore`, over the local daemon's unix socket or `ssh-ng`, which runs
+  `nix-daemon --stdio` on the far side as Nix's own client does. It offers protocol 1.37 and speaks
+  what the daemon answers: 1.37 with CppNix and Determinate Nix, and 1.35 with Lix, which froze the
+  protocol at the Nix 2.18 level. It's how the core talks to the daemon.
+  - `.drv` files and sources go in one `AddMultipleToStore` stream per batch, references first, each
+    with its content address, so the daemon re-derives every path it's sent. While one source's NAR
+    streams, the next ones are opened, so a batch of small re-added outputs doesn't pay a round trip
+    each in series. Validity and builds
+    are one request per batch. Path info has no batched request, so a batch's requests are written
+    back to back while the replies are read, split across connections when it's large. Each cost
+    grows linearly with its batch.
+  - It owns its connections: two bounded pools of long-lived ones, one for operations and one for
+    NAR reads, so an add whose sources are NARs read from the same store can't wait on itself. A
+    connection is reused only after an operation finished cleanly. An error, or a dropped future,
+    closes it, and the daemon interrupts whatever it was doing for that connection, a running build
+    included. A daemon error comes back in the daemon's words with its last log lines.
+- **CLI.** `CliStore` always works and serves as the conformance oracle. `.drv` files go through
   `nix derivation add` in the JSON dialect of the implementation on the PATH, each starting as soon as
   its own inputs are added, and each implementation checks the output paths it's given against its
-  own. Sources go through a
-  throwaway local binary cache whose `.narinfo` carries the references and the content address, and
-  `nix copy --from`; no other CLI command adds a path with references. Builds, validity and path info
-  use `nix-store` with many paths per invocation.
+  own. Sources go through a throwaway local binary cache whose `.narinfo` carries the references and
+  the content address, and `nix copy --from`; no other CLI command adds a path with references.
+  Builds, validity and path info use `nix-store` with many paths per invocation, NARs come from
+  `nix-store --dump`, and roots from `nix-store --realise --add-root`.
 
 Lix plans to replace the legacy protocol with Cap'n Proto RPC once that's stable. When it does, that
 becomes a third implementation of the same trait. The core owns global concurrency: a pool of
@@ -243,13 +269,16 @@ long-lived connections and one build-slot semaphore. It doesn't rely on the daem
 is counted per connection.
 
 **Trust.** Shikumi works as an untrusted daemon user. Adding `.drv` files, building them, adding
-content-addressed paths with references, and registering indirect roots are all expected to work
-untrusted, and each is proved with an untrusted test user on every implementation before anything
-depends on it. The conformance checks prove the first three through the CLI today; indirect roots
-aren't proved yet. A path whose content address doesn't reproduce it is refused on every implementation:
-the daemon checks an untrusted client's add of a path with references, and `nix copy` refuses one
-without references before it reaches the daemon. Two things need the machine's admin, and the core detects and reports each instead of
-failing silently:
+content-addressed paths with references, reading NARs, registering indirect roots and collecting
+garbage all work untrusted, and the conformance checks prove each with an untrusted test user on every
+implementation, through both transports and over `ssh-ng`, where the far side's user is untrusted
+too. A path whose content address doesn't reproduce it is refused on every implementation: the daemon
+checks it for an add through the worker protocol, and `nix copy` refuses one without references before
+it reaches the daemon. Shikumi never sends a derivation whole for the daemon to build, which every
+implementation refuses for an input-addressed one from an untrusted client; it adds the `.drv` and
+builds that. [The capability page](../reference/capabilities.md#store-conformance) lists each
+implementation's answers. Two things need the machine's admin, and the core detects and reports each
+instead of failing silently:
 
 - **Substitution** from a Shikumi cache needs the cache in `trusted-substituters` and its key in
   `trusted-public-keys`.
@@ -265,7 +294,11 @@ failing silently:
   manifest per commit, so a fresh worktree fetches one manifest and then targeted NARs.
 - **GC roots.** Each build writes one manifest store path whose references are every live unit output
   and `.drv`. The worktree roots that manifest at `.shikumi/roots/`, plus a bounded number of previous
-  generations. A deleted worktree leaves a dangling root, which the next GC collects.
+  generations. A deleted worktree leaves a dangling root, which the next GC collects. **Current:** one
+  manifest and its root, `root_manifest` in `shikumi-outputs`: a content-addressed path listing the
+  live paths and referring to them, made a link and registered as an indirect root through the
+  transport. The link is on the daemon's machine, so the root goes through the local daemon only, and
+  the `ssh-ng` transport refuses it. Generations and the `.shikumi/roots/` layout are targets.
 - **Eviction.** Nix GC has no notion of least recently used, so Shikumi keeps a shared warm manifest of
   recently hit units with its own last-used times, and leaves the rest to the daemon's GC.
 - **Non-redistributable marks** travel with an output, and the push path refuses to upload a marked
@@ -360,16 +393,16 @@ Shikumi is designed for repositories of 100k source files, a few thousand crates
 [The philosophy](../philosophy.md) holds the laws every part keeps, such as using only what all three
 Nix implementations share and having one owner per concern. These are the invariants this design's
 own mechanisms hold, with the part that holds each and the check that proves it. The checks are
-accepted targets like the rest of the page, except the two marked current.
+accepted targets like the rest of the page, except those marked current.
 
 | Invariant | Held by | Checked by |
 | --- | --- | --- |
 | A computed `.drv` path matches each implementation's, bit for bit | [derivation synthesis](#derivation-synthesis) | the `conformance-*` gate checks against CppNix, Determinate Nix and Lix; current |
 | Cached outputs are reproducible | [each backend](#early-cutoff) | its determinism check: two sandboxed builds, compared |
-| A re-addressed output has no reference to its own store path | [early cutoff](#early-cutoff) | the determinism check's scan for the output's own path |
+| A re-addressed output has no reference to its own store path | [early cutoff](#early-cutoff) | `readdress` refusing it, checked on every implementation; current. Before that, the determinism check's scan for the output's own path |
 | A cached output was produced with only its declared inputs visible | the Nix sandbox, or [Shikumi's own](#execution-open) | the sandboxed build re-checking [discovered inputs](#language-backends) |
 | An asserted output is never shared until a sandboxed build confirms it | [provenance](#provenance) | the push path's refusal |
-| Daemon operations work as an untrusted user | [store transport](#store-transport) | a run as an untrusted test user on every implementation; current for adding `.drv` files and sources and building |
+| Daemon operations work as an untrusted user | [store transport](#store-transport) | a run as an untrusted test user on every implementation, through each transport; current for adding `.drv` files and sources, building, reading NARs, indirect roots and collecting garbage |
 | A worktree never has two supervisors or a lost service | [service supervisor](#service-supervisor) | the four lifetime tests |
 | No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | no check named yet |
 | The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | no check named yet |

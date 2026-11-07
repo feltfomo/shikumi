@@ -10,7 +10,7 @@ use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::address::{FixedHash, output_path_name};
+use crate::address::{ContentAddress, FixedHash, output_path_name};
 use crate::{PathError, Sha256, StoreDir, StoreName, StorePath};
 
 /// a derivation output's name, such as `out` or `dev`.
@@ -211,6 +211,8 @@ pub struct StoreDerivation {
     path: StorePath,
     outputs: BTreeMap<OutputName, StorePath>,
     aterm: String,
+    /// the sha256 of `aterm`, which both the `.drv`'s path and its content address are made from.
+    aterm_hash: Sha256,
     modulo: Sha256,
 }
 
@@ -271,6 +273,22 @@ impl StoreDerivation {
             .iter()
             .map(|(path, input)| (path, &input.outputs))
     }
+
+    /// what the daemon is told the `.drv` file's content is, which it recomputes the path from.
+    pub fn content_address(&self) -> ContentAddress {
+        ContentAddress::Text(self.aterm_hash)
+    }
+
+    /// the `.drv` file's references, which its text-addressed path is hashed with: its input
+    /// sources and input derivations together.
+    pub fn references(&self) -> BTreeSet<StorePath> {
+        self.derivation
+            .input_srcs
+            .iter()
+            .chain(self.derivation.input_drvs.keys())
+            .cloned()
+            .collect()
+    }
 }
 
 impl StoreDir {
@@ -322,17 +340,14 @@ impl StoreDir {
         };
         buf.clear();
         write_aterm(&mut buf, self, &drv, Some(&outputs), Inputs::Paths);
-        let path = self.drv_path(
-            &name,
-            buf.as_bytes(),
-            &drv.input_srcs,
-            drv.input_drvs.keys(),
-        );
+        let aterm_hash = Sha256::digest(buf.as_bytes());
+        let path = self.drv_path(&name, &aterm_hash, &drv.input_srcs, drv.input_drvs.keys());
         Ok(StoreDerivation {
             derivation: drv,
             path,
             outputs,
             aterm: buf,
+            aterm_hash,
             modulo,
         })
     }

@@ -7,8 +7,9 @@ agents.
 
 Most of Shikumi isn't built yet. What exists is the repository's own tooling (a dev shell, the gate,
 the benchmark harness in `bench/` and the gate's checks in `tools/repo-check/`) and the first crates
-of the core in `crates/`: derivation synthesis, the store transport and the conformance harness that
-checks them against every supported Nix.
+of the core in `crates/`: derivation synthesis, the store transport over the worker protocol and the
+CLI, re-addressing and roots for built outputs, and the conformance harness that checks them against
+every supported Nix.
 
 ## The shell
 

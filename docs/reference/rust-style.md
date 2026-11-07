@@ -92,9 +92,11 @@ thread reaping a child would disturb.
 
 Async code runs on Tokio, one runtime per process, as [the architecture](../explanation/architecture.md#the-core)
 says. The store transport's operations are async, and the conformance harness drives them from one
-current-thread runtime. Independent CLI invocations run as tasks in a `JoinSet` with a bounded number
-in flight, owned by the call that started them; a child process is killed when its task is dropped.
-Blocking file work in async code goes through `tokio::fs` or `spawn_blocking`.
+current-thread runtime. Independent CLI invocations and daemon requests run as tasks in a `JoinSet`
+with a bounded number in flight, owned by the call that started them. A child process is killed, and
+a daemon connection closed, when the future that holds it is dropped; a connection goes back to its
+pool only after an operation finished cleanly. Blocking file work in async code goes through
+`tokio::fs` or `spawn_blocking`.
 
 ## Algorithms
 

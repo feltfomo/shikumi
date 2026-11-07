@@ -10,7 +10,7 @@ mod hash;
 mod nar;
 mod path;
 
-pub use address::{FixedHash, Ingestion, References, SelfReference, SourceAddress};
+pub use address::{ContentAddress, FixedHash, Ingestion, References, SelfReference, SourceAddress};
 pub use derivation::{Derivation, DerivationError, OutputName, Outputs, StoreDerivation};
 pub use hash::{HashParseError, Sha256};
 pub use nar::{Nar, NarError, NarNode};

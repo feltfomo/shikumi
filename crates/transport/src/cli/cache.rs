@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use shikumi_derivation::{SourceAddress, StoreDir};
 use tokio::io::AsyncWriteExt;
 
-use super::process::run_all;
+use crate::jobs::run_all;
 use crate::{SourceNar, TransportError};
 
 /// writes the cache into `root`, an empty directory, and returns the absolute paths it holds, in
@@ -54,7 +54,11 @@ async fn write_source(
     dir: &StoreDir,
     source: SourceNar,
 ) -> Result<String, TransportError> {
-    let SourceNar { address, mut nar } = source;
+    let SourceNar {
+        address,
+        nar_size,
+        mut nar,
+    } = source;
     // one file per path, named by its hash part, so sources never collide.
     let nar_name = format!("{}.nar", address.path().hash_part());
     let nar_path = root.join("nar").join(&nar_name);
@@ -64,6 +68,15 @@ async fn write_source(
     };
     let mut file = tokio::fs::File::create(&nar_path).await.map_err(io)?;
     let size = tokio::io::copy(&mut nar, &mut file).await.map_err(io)?;
+    if size != nar_size {
+        return Err(TransportError::Nar {
+            path: dir.display(address.path()),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("is {size} bytes, not its declared {nar_size}"),
+            ),
+        });
+    }
     // tokio's file finishes its last write in the background; `nix copy` must see all of it.
     file.flush().await.map_err(io)?;
     let info_path = root.join(format!("{}.narinfo", address.path().hash_part()));
@@ -91,7 +104,7 @@ fn narinfo(dir: &StoreDir, address: &SourceAddress, nar_name: &str, size: u64) -
         }
         info.push('\n');
     }
-    writeln!(info, "CA: fixed:r:sha256:{base32}").unwrap();
+    writeln!(info, "CA: {}", address.content_address()).unwrap();
     info
 }
 
@@ -133,6 +146,7 @@ mod tests {
             .into_iter()
             .map(|address| SourceNar {
                 address: address.clone(),
+                nar_size: nar.bytes.len() as u64,
                 nar: Box::new(std::io::Cursor::new(nar.bytes.clone())),
             })
             .collect();
