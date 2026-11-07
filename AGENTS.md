@@ -5,22 +5,18 @@ disagree, this file wins.
 
 ## Where things live
 
-- Plans, roadmaps, research and batons live in the maintainer's planning repository, not here. A
-  kickoff gives an implementer what it needs from them.
-- `docs/` is for product documentation: what Shikumi does and how to use it. A band's design moves here
-  once it's implemented.
-- `.runtime/` is gitignored scratch and evidence. Phase evidence is kept under
-  `.runtime/<effort>/<phase>/` in the main checkout.
+- Plans, roadmaps and research live outside this repository. Nothing here depends on them.
+- `docs/` is product documentation: what Shikumi does and how to use it.
+- `.runtime/` is gitignored. Scratch work and anything you keep as evidence of a run go there, never in
+  a tracked path.
 
 ## Worktrees
 
-Phase worktrees live outside the checkout, in the maintainer's worktree container, one directory per
-phase, and are removed after their commit is verified and evidence is copied. Never put a worktree
-inside the checkout.
+Worktrees live outside the checkout, never inside it.
 
 ## Protected invariants
 
-These hold for every change. A change that needs one relaxed goes to the architect first.
+These hold for every change. Relaxing one is a design decision, not something a change does on its own.
 
 - Shikumi runs on CppNix, Determinate Nix and Lix. It uses only what all three share: input-addressed
   and fixed-output derivations, content-addressed store paths and the daemon worker protocol. No
