@@ -54,10 +54,18 @@ output for the current system:
   Markdown file names one of its headings or HTML anchors.
 - `private-names`: no tracked file or path contains a protected name. The names are held only as salted
   digests in `tools/repo-check`; add one with `repo-check digest`, which reads it from stdin.
+- `conformance-cppnix-2-35`, `conformance-determinate-3-24`, `conformance-lix-2-95` and
+  `conformance-lix-2-96`: one NixOS VM test per Nix implementation, defined in `nix/conformance.nix`.
+  Inside each VM an untrusted user runs `shikumi-conformance`, which compares every store path Shikumi
+  computes with what that VM's daemon registers and reports. These checks exist only on Linux, and they
+  need KVM: without `/dev/kvm` and the `kvm` system feature the builder refuses them. Each boots a VM
+  and builds its Nix if the cache lacks it; Determinate Nix is built from source.
 
 The checks see only what Git tracks, so a new file needs `git add --intent-to-add` before the gate sees
 it. For quick passes while working, run the same tools inside `nix develop`: `cargo nextest run`,
 `cargo clippy --all-targets`, and `git ls-files -z | cargo run -q -p repo-check -- links` (or `names`).
+One conformance VM builds on its own with `nix build .#checks.x86_64-linux.conformance-lix-2-95`; its
+report is `report.txt` in the result, and the build log prints it too.
 
 A full gate run is a long run. It goes through the maintainer's run queue, as the standing instructions
 say.

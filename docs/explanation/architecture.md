@@ -3,10 +3,12 @@
 This page says how Shikumi is put together: who owns what, how a build and a shell entry flow, and
 which invariants hold. [The capability page](../reference/capabilities.md) says what Shikumi provides.
 
-The product isn't built yet. Everything here is an accepted target, and the sections marked **open**
-are mechanisms still being chosen, each with what decides it. What exists today is the repository's
-foundation: the gate, its checks in `tools/repo-check/`, and [the benchmark harness](#the-benchmark-harness),
-which is current.
+Most of the product isn't built yet. Everything here is an accepted target unless it says it's current,
+and the sections marked **open** are mechanisms still being chosen, each with what decides it. What
+exists today is the repository's foundation (the gate, its checks in `tools/repo-check/`, and
+[the benchmark harness](#the-benchmark-harness)) and the base the core builds on: the path computation
+of [derivation synthesis](#derivation-synthesis) and the CLI implementation of
+[the store transport](#store-transport). Those are current.
 
 ## Shape
 
@@ -138,6 +140,20 @@ generate per-unit derivations. A one-file edit writes O(affected units) `.drv` f
 - **Invariant:** the computed `.drv` path matches what each implementation computes, bit for bit. A
   conformance test against CppNix, Determinate Nix and Lix guards it.
 
+**Current:** the `shikumi-derivation` crate, in `crates/derivation/`, is the one place Shikumi
+computes a store path. It models input-addressed and fixed-output derivations, writes their ATerm,
+and computes the hash modulo, the output paths, fixed-output paths (flat and recursive sha256) and the
+`.drv` file's text-addressed path. It also serializes NARs and computes the content-addressed path of
+a source from its NAR hash, name and references, refusing a self-reference. The store transport and
+the conformance harness take paths from it and never derive one. The `conformance-*` gate checks
+compare it with CppNix 2.35.3, Determinate Nix 3.24.2 and Lix 2.95.4 and 2.96.0, each in a NixOS VM,
+as [the capability page](../reference/capabilities.md#store-path-conformance) lists.
+
+It refuses what not every implementation handles the same way: environment variable `__json`, which
+CppNix reserves for structured attributes; a system string holding a quote or a backslash, which
+every implementation writes into the `.drv` unescaped; and a NUL byte anywhere a builder would see
+it, which Lix refuses to build and CppNix cuts short.
+
 ### Early cutoff
 
 Lix removed content-addressed derivations, and CppNix and Determinate Nix still mark them
@@ -203,14 +219,23 @@ sandbox on macOS, so its cost is measured per platform, not on Linux alone.
 
 ### Store transport
 
-All daemon access goes through one trait with two implementations:
+All daemon access goes through one trait, `StoreTransport` in `crates/transport/`, with two
+implementations. The trait is current. Every operation takes a batch and is async, so one runtime can
+drive builds, queries and adds side by side: adding `.drv` files, adding content-addressed sources,
+building outputs, querying validity and querying path info. A source's NAR arrives as a reader and
+is streamed, so memory holds what's in flight rather than the batch.
 
-- **Worker protocol.** The only interface CppNix, Determinate Nix and Lix all share, frozen at the
+- **Worker protocol.** Accepted target. The only interface CppNix, Determinate Nix and Lix all share, frozen at the
   2.18 level in Lix. Over a unix socket locally and `ssh-ng` remotely. `psyclyx/fix` already runs
   against both CppNix and Lix daemons. snix's `nix-compat` has framing and ATerm code to reuse or
   cross-check.
-- **CLI.** `nix-store --realise` over many paths per invocation. It always works and serves as the
-  conformance oracle.
+- **CLI.** Current. It always works and serves as the conformance oracle. `.drv` files go through
+  `nix derivation add` in the JSON dialect of the implementation on the PATH, each starting as soon as
+  its own inputs are added, and each implementation checks the output paths it's given against its
+  own. Sources go through a
+  throwaway local binary cache whose `.narinfo` carries the references and the content address, and
+  `nix copy --from`; no other CLI command adds a path with references. Builds, validity and path info
+  use `nix-store` with many paths per invocation.
 
 Lix plans to replace the legacy protocol with Cap'n Proto RPC once that's stable. When it does, that
 becomes a third implementation of the same trait. The core owns global concurrency: a pool of
@@ -220,7 +245,10 @@ is counted per connection.
 **Trust.** Shikumi works as an untrusted daemon user. Adding `.drv` files, building them, adding
 content-addressed paths with references, and registering indirect roots are all expected to work
 untrusted, and each is proved with an untrusted test user on every implementation before anything
-depends on it. Two things need the machine's admin, and the core detects and reports each instead of
+depends on it. The conformance checks prove the first three through the CLI today; indirect roots
+aren't proved yet. A path whose content address doesn't reproduce it is refused on every implementation:
+the daemon checks an untrusted client's add of a path with references, and `nix copy` refuses one
+without references before it reaches the daemon. Two things need the machine's admin, and the core detects and reports each instead of
 failing silently:
 
 - **Substitution** from a Shikumi cache needs the cache in `trusted-substituters` and its key in
@@ -332,16 +360,16 @@ Shikumi is designed for repositories of 100k source files, a few thousand crates
 [The philosophy](../philosophy.md) holds the laws every part keeps, such as using only what all three
 Nix implementations share and having one owner per concern. These are the invariants this design's
 own mechanisms hold, with the part that holds each and the check that proves it. The checks are
-accepted targets like the rest of the page.
+accepted targets like the rest of the page, except the two marked current.
 
 | Invariant | Held by | Checked by |
 | --- | --- | --- |
-| A computed `.drv` path matches each implementation's, bit for bit | [derivation synthesis](#derivation-synthesis) | the conformance test against CppNix, Determinate Nix and Lix |
+| A computed `.drv` path matches each implementation's, bit for bit | [derivation synthesis](#derivation-synthesis) | the `conformance-*` gate checks against CppNix, Determinate Nix and Lix; current |
 | Cached outputs are reproducible | [each backend](#early-cutoff) | its determinism check: two sandboxed builds, compared |
 | A re-addressed output has no reference to its own store path | [early cutoff](#early-cutoff) | the determinism check's scan for the output's own path |
 | A cached output was produced with only its declared inputs visible | the Nix sandbox, or [Shikumi's own](#execution-open) | the sandboxed build re-checking [discovered inputs](#language-backends) |
 | An asserted output is never shared until a sandboxed build confirms it | [provenance](#provenance) | the push path's refusal |
-| Daemon operations work as an untrusted user | [store transport](#store-transport) | a run as an untrusted test user on every implementation |
+| Daemon operations work as an untrusted user | [store transport](#store-transport) | a run as an untrusted test user on every implementation; current for adding `.drv` files and sources and building |
 | A worktree never has two supervisors or a lost service | [service supervisor](#service-supervisor) | the four lifetime tests |
 | No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | no check named yet |
 | The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | no check named yet |

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["bench", "tools/repo-check"]
+members = ["bench", "crates/conformance", "crates/derivation", "crates/transport", "tools/repo-check"]
 
 [workspace.package]
 edition = "2024"
@@ -16,7 +16,11 @@ schemars = "1.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"
+shikumi-derivation = { path = "crates/derivation" }
+shikumi-transport = { path = "crates/transport" }
 tempfile = "3.27"
+# one runtime per process, as the core will run; only the parts the store transport uses.
+tokio = { version = "1.54", default-features = false, features = ["fs", "io-util", "macros", "process", "rt"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

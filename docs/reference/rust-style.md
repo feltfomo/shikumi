@@ -90,9 +90,11 @@ A measurement is the exception: it runs alone, so it doesn't measure its neighbo
 baseline measures from one thread, because its CPU time comes from `RUSAGE_CHILDREN`, which another
 thread reaping a child would disturb.
 
-No crate in the tree uses an async runtime yet. The core will run one Tokio runtime per process, as
-[the architecture](../explanation/architecture.md#the-core) says; that's an accepted target, not a
-rule any code follows today.
+Async code runs on Tokio, one runtime per process, as [the architecture](../explanation/architecture.md#the-core)
+says. The store transport's operations are async, and the conformance harness drives them from one
+current-thread runtime. Independent CLI invocations run as tasks in a `JoinSet` with a bounded number
+in flight, owned by the call that started them; a child process is killed when its task is dropped.
+Blocking file work in async code goes through `tokio::fs` or `spawn_blocking`.
 
 ## Algorithms
 

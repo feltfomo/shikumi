@@ -5,8 +5,10 @@ shell, the gate, the benchmark harness, tests, dependencies and scratch. [The ph
 has the reasons behind these rules, and [`docs/ai/`](ai/working.md) adds the rules that apply only to
 agents.
 
-Shikumi itself isn't built yet. What exists is the repository's own tooling: a dev shell, the gate,
-the benchmark harness in `bench/` and the gate's checks in `tools/repo-check/`.
+Most of Shikumi isn't built yet. What exists is the repository's own tooling (a dev shell, the gate,
+the benchmark harness in `bench/` and the gate's checks in `tools/repo-check/`) and the first crates
+of the core in `crates/`: derivation synthesis, the store transport and the conformance harness that
+checks them against every supported Nix.
 
 ## The shell
 

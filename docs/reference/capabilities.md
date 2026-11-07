@@ -24,7 +24,8 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | [Formatting](#formatting)                                     | one formatter per file, cache shared across worktrees     | Accepted target |
 | [Formatting mechanism](#formatting-mechanism)                 | treefmt wrapped, or Shikumi's own                         | Open            |
 | [Rust tests](#testing-shikumi-itself)                         | Shikumi's own Rust tested under nextest                   | Current         |
-| [Nix tests and conformance](#testing-shikumi-itself)          | nix-unit tests, `.drv` paths checked on all three         | Accepted target |
+| [Store path conformance](#store-path-conformance)             | Shikumi's store paths checked against all three, on Linux | Current         |
+| [Nix tests](#testing-shikumi-itself)                          | nix-unit tests of the Nix side                            | Accepted target |
 | [Benchmark fixtures](#benchmark-fixtures)                     | seeded fixtures, the Cargo baseline, the result record    | Current         |
 | [Out of scope](#out-of-scope)                                 | what Shikumi deliberately doesn't do                      | Out of scope    |
 
@@ -293,11 +294,41 @@ above, including a missing formatter failing only its own scope.
 | ------------------------------------------------------------------------------------ | --------------- |
 | Nix evaluation and module behavior tested in pure Nix with nix-unit and flake checks | Accepted target |
 | Rust behavior tested with nextest                                                    | Current         |
-| `.drv` path computation conformance-tested against CppNix, Determinate Nix and Lix   | Accepted target |
+| Store paths conformance-tested against CppNix, Determinate Nix and Lix, on Linux     | Current         |
 | Benchmark fixtures                                                                   | Current         |
 
 The gate's `nextest` check runs every workspace test today. nix-unit is pinned in the flake, and the
 first Nix logic lands with its tests.
+
+### Store path conformance
+
+Status: current on Linux; unverified on macOS.
+
+Every store path Shikumi computes has to equal, bit for bit, what each Nix implementation computes.
+The gate checks that against four implementations, each in its own NixOS VM:
+
+| Implementation  | Version | Built from                                  |
+| --------------- | ------- | ------------------------------------------- |
+| CppNix          | 2.35.3  | the pinned nixpkgs                          |
+| Determinate Nix | 3.24.2  | its source tag, with nixpkgs' Nix packaging |
+| Lix             | 2.95.4  | the pinned nixpkgs                          |
+| Lix             | 2.96.0  | the pinned nixpkgs                          |
+
+In each VM, a user the daemon doesn't trust runs `shikumi-conformance`. It computes paths with the
+derivation crate, sends them through the store transport and records its value beside the daemon's
+for every check:
+
+- **`.drv` paths and the file's exact bytes**, for derivations with no inputs, input sources, input
+  derivations two levels deep, several outputs, flat and recursive fixed outputs, a fixed output with
+  inputs, inputs that share a hash modulo, and every string escape the `.drv` format has.
+- **Output paths**, as a real build of each derivation reports them, and each output's NAR hash.
+- **Content-addressed source paths**, with and without references, as the daemon registers them. A
+  path computed wrong is refused, and an output that refers to itself is refused as a source.
+- **Trust**: the daemon reports the user as untrusted.
+
+The harness exits non-zero when any value differs; `--perturb <case>` alters one case's computed
+values to show that it does. The checks need KVM, so they don't run on macOS. The Determinate Nix
+build leaves out its wasm builtins, Sentry and OpenTelemetry, none of which touch the store.
 
 ## Benchmark fixtures
 
