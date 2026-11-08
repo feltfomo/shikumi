@@ -1,0 +1,1088 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shikumi benchmark record",
+  "description": "one measured build whose buckets, outcome and fixture agree with each other. it holds the\nrecord as written, checked, so writing it out never regenerates or re-checks anything.",
+  "type": "object",
+  "properties": {
+    "buckets": {
+      "description": "where the wall time went, one bucket per kind of step, in step order. every step the\ncandidate's mechanism pays in the scenario has a bucket.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Bucket"
+      }
+    },
+    "candidate": {
+      "$ref": "#/$defs/Candidate"
+    },
+    "covered_ns": {
+      "description": "the wall time at least one bucket's run covered, in nanoseconds; the rest went to work no\nbucket names, such as scheduling and waiting.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "cpu": {
+      "$ref": "#/$defs/Cpu"
+    },
+    "fixture": {
+      "$ref": "#/$defs/Fixture"
+    },
+    "graph_depth": {
+      "description": "the fixture's longest dependency chain, in edges. it must match the fixture.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "incremental": {
+      "description": "whether rustc's incremental compilation was on; null for fixtures that run no compiler.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "iteration": {
+      "description": "which repetition of the scenario this is, from 0.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "machine": {
+      "$ref": "#/$defs/Machine"
+    },
+    "nix": {
+      "description": "the Nix implementation the candidate ran against; null when no Nix is in play, as for the\nCargo baseline.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NixImplementation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome"
+    },
+    "scenario": {
+      "$ref": "#/$defs/Scenario"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/Version2"
+    },
+    "started_at_unix_ms": {
+      "description": "when the measured build started, in milliseconds since the Unix epoch.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "store_valid_paths": {
+      "description": "how many valid paths the store held when the build started; null when it wasn't read.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "transport": {
+      "description": "how work and outputs move between the candidate and the store; null when the candidate\nhas no store transport.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Transport"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "unit_count": {
+      "description": "the units the fixture holds: crates for a Rust workspace, units for an overhead graph. it\nmust match the fixture.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "wall_time_ns": {
+      "description": "elapsed wall-clock time of the measured build, in nanoseconds.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "buckets",
+    "candidate",
+    "covered_ns",
+    "cpu",
+    "fixture",
+    "graph_depth",
+    "incremental",
+    "iteration",
+    "machine",
+    "nix",
+    "outcome",
+    "scenario",
+    "schema_version",
+    "started_at_unix_ms",
+    "store_valid_paths",
+    "transport",
+    "unit_count",
+    "wall_time_ns"
+  ],
+  "$defs": {
+    "Bucket": {
+      "description": "the time one kind of step took inside a measured build. offsets are from the instant the\nbuild's timer started; when steps ran concurrently, `total_ns` sums them and can exceed the\nspan they cover.",
+      "type": "object",
+      "properties": {
+        "count": {
+          "description": "how many times the step ran.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "first_start_ns": {
+          "description": "when the first run of the step started, in nanoseconds after the timer started.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "last_end_ns": {
+          "description": "when the last run of the step ended, in nanoseconds after the timer started.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "step": {
+          "$ref": "#/$defs/Step"
+        },
+        "total_ns": {
+          "description": "the summed duration of every run of the step, in nanoseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "step",
+        "count",
+        "total_ns",
+        "first_start_ns",
+        "last_end_ns"
+      ]
+    },
+    "Candidate": {
+      "description": "the executor being measured.",
+      "type": "object",
+      "properties": {
+        "mechanism": {
+          "$ref": "#/$defs/Mechanism"
+        },
+        "name": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "version": {
+          "description": "the version line the candidate's tool reports.",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "mechanism"
+      ]
+    },
+    "ClientTrust": {
+      "description": "what the daemon said about the client. a trusted client may override settings per connection,\nso the record says which kind it was.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "trusted",
+            "untrusted"
+          ]
+        },
+        {
+          "description": "the daemon didn't say, which older protocol versions and the CLI don't.",
+          "type": "string",
+          "const": "unknown"
+        }
+      ]
+    },
+    "Cpu": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/CpuScope"
+        },
+        "system_ns": {
+          "description": "system CPU time over the build, in nanoseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "user_ns": {
+          "description": "user CPU time over the build, in nanoseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "user_ns",
+        "system_ns"
+      ]
+    },
+    "CpuScope": {
+      "description": "whose CPU time a record counts.",
+      "oneOf": [
+        {
+          "description": "the measured process and every child it waited for.",
+          "type": "string",
+          "const": "process-tree"
+        },
+        {
+          "description": "every CPU of the machine, which is the only scope that sees a daemon's work; it includes\nwhatever else ran meanwhile.",
+          "type": "string",
+          "const": "machine"
+        }
+      ]
+    },
+    "Fixture": {
+      "description": "what was built, with enough to regenerate it and a digest to prove the regeneration matches.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "description": "the digest of the generated tree before any scenario edit.",
+              "$ref": "#/$defs/Sha256"
+            },
+            "kind": {
+              "type": "string",
+              "const": "rust-workspace"
+            },
+            "parameters": {
+              "$ref": "#/$defs/RustWorkspaceParams"
+            },
+            "seed": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "seed",
+            "parameters",
+            "digest"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "description": "the digest of the unit graph's canonical JSON.",
+              "$ref": "#/$defs/Sha256"
+            },
+            "kind": {
+              "type": "string",
+              "const": "overhead"
+            },
+            "shape": {
+              "$ref": "#/$defs/Shape"
+            },
+            "units": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "shape",
+            "units",
+            "digest"
+          ]
+        }
+      ]
+    },
+    "Identifier": {
+      "description": "a lowercase name: a letter, then letters, digits and hyphens.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "Identity": {
+      "description": "a digest over each unit's name and output NAR hash, in unit order, beside the digest a\nreference build of the same fixture state gave.",
+      "type": "object",
+      "properties": {
+        "outputs": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "reference": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outputs",
+        "reference"
+      ]
+    },
+    "LargeCrateParams": {
+      "type": "object",
+      "properties": {
+        "dependencies": {
+          "description": "how many of the other crates it depends on directly; at most `crates`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "functions_per_module": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "modules": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "modules",
+        "functions_per_module",
+        "dependencies"
+      ]
+    },
+    "Machine": {
+      "type": "object",
+      "properties": {
+        "arch": {
+          "description": "Rust's name for the CPU architecture, such as `x86_64` or `aarch64`.",
+          "$ref": "#/$defs/Text"
+        },
+        "cpu_model": {
+          "description": "the CPU model string; null where the platform doesn't report one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logical_cpus": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "name": {
+          "description": "the host's name, or the name given on the command line.",
+          "$ref": "#/$defs/Text"
+        },
+        "os": {
+          "description": "Rust's name for the operating system, such as `linux` or `macos`.",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "arch",
+        "cpu_model",
+        "logical_cpus",
+        "name",
+        "os"
+      ]
+    },
+    "Mechanism": {
+      "description": "how a candidate runs a unit, which decides the steps it pays for.",
+      "oneOf": [
+        {
+          "description": "plain Cargo, in place, with its own target directory.",
+          "type": "string",
+          "const": "cargo"
+        },
+        {
+          "description": "one derivation per unit, built by the daemon in its sandbox.",
+          "type": "string",
+          "const": "derivation-per-unit"
+        },
+        {
+          "description": "one derivation per batch of ready units, with one output per unit.",
+          "type": "string",
+          "const": "batched-derivations"
+        },
+        {
+          "description": "the executor runs the compiler in a sandbox it owns and adds outputs by content.",
+          "type": "string",
+          "const": "owned-sandbox"
+        },
+        {
+          "description": "the store's own operations, which no executor changes: collection and registration.",
+          "type": "string",
+          "const": "store"
+        }
+      ]
+    },
+    "NixEnvironment": {
+      "description": "where the Nix implementation ran, relative to the machine the record names.",
+      "oneOf": [
+        {
+          "description": "directly on the machine's own operating system.",
+          "type": "string",
+          "const": "host"
+        },
+        {
+          "description": "inside a virtual machine on that machine.",
+          "type": "string",
+          "const": "virtual-machine"
+        },
+        {
+          "description": "inside a container on that machine.",
+          "type": "string",
+          "const": "container"
+        }
+      ]
+    },
+    "NixFlavor": {
+      "type": "string",
+      "enum": [
+        "cppnix",
+        "determinate",
+        "lix"
+      ]
+    },
+    "NixImplementation": {
+      "description": "the Nix a candidate ran against, with what distinguishes two runs of the same version: where it\nran, the settings that change what a build costs, and whether the daemon trusted the client.",
+      "type": "object",
+      "properties": {
+        "client_trust": {
+          "$ref": "#/$defs/ClientTrust"
+        },
+        "environment": {
+          "$ref": "#/$defs/NixEnvironment"
+        },
+        "implementation": {
+          "$ref": "#/$defs/NixFlavor"
+        },
+        "settings": {
+          "$ref": "#/$defs/NixSettings"
+        },
+        "version": {
+          "description": "the version the implementation reports, such as `2.95.4`.",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "implementation",
+        "version",
+        "environment",
+        "settings",
+        "client_trust"
+      ]
+    },
+    "NixSettings": {
+      "description": "the settings that change what a build costs, as the implementation reported them for the run.\neach is read rather than assumed: a run whose settings weren't read can't be told apart from\nanother, so the contract has no \"unknown\" value.",
+      "type": "object",
+      "properties": {
+        "cores": {
+          "description": "cores offered to each build; 0 is Nix's own value for all of them.",
+          "$ref": "#/$defs/Setting_uint32"
+        },
+        "max_jobs": {
+          "$ref": "#/$defs/Setting_uint32"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/Setting_SandboxMode"
+        },
+        "use_cgroups": {
+          "description": "whether builds run in their own cgroups.",
+          "$ref": "#/$defs/Setting_boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sandbox",
+        "use_cgroups",
+        "max_jobs",
+        "cores"
+      ]
+    },
+    "Outcome": {
+      "description": "the check a timed build has to pass: it did the work its row claims, and no more or less.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "built": {
+              "description": "units whose compiler or builder ran.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "expected_built": {
+              "description": "units the fixture's model says the scenario has to build.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "identity": {
+              "description": "the identity of every unit's output after the build, against a reference; null where\nno reference exists, as for Cargo, whose outputs no other candidate produces.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Identity"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "build"
+            },
+            "output_bytes_sent": {
+              "description": "NAR bytes of unit outputs sent to the store, by re-addressing or adding them.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "skipped": {
+              "description": "units found up to date without running anything.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "source_bytes_sent": {
+              "description": "NAR bytes of unit sources sent to the store.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "warm": {
+              "description": "what an executor's incremental units started from; null when its units compile\nwithout incremental state, and for Cargo, whose session is its own target directory.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Warm"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "built",
+            "expected_built",
+            "identity",
+            "kind",
+            "output_bytes_sent",
+            "skipped",
+            "source_bytes_sent",
+            "warm"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "bytes_received": {
+              "description": "NAR bytes received from the cache.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "expected": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "substitution"
+            },
+            "substituted": {
+              "description": "paths the store held after the substitution, out of those it was asked for.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "bytes_received",
+            "expected",
+            "kind",
+            "substituted"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "deleted": {
+              "description": "unrooted unit paths no longer valid after the collection.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "expected_deleted": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "expected_kept": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kept": {
+              "description": "rooted paths still valid after the collection.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "collection"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "deleted",
+            "expected_deleted",
+            "expected_kept",
+            "kept",
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expected": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "registration"
+            },
+            "registered": {
+              "description": "paths valid after the add, out of those sent.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "expected",
+            "kind",
+            "registered"
+          ]
+        }
+      ]
+    },
+    "Percent": {
+      "type": "integer",
+      "maximum": 100,
+      "minimum": 0
+    },
+    "RustWorkspaceParams": {
+      "description": "the shape of a generated workspace. the types hold each count above zero; [`Self::validate`]\nholds the rules between counts, and a record checks them when it's read.",
+      "type": "object",
+      "properties": {
+        "crates": {
+          "description": "crates besides the large one, the hub included. must exceed `depth`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "dependencies_per_crate": {
+          "description": "the most direct dependencies a crate takes: one from the layer below, the rest from any\nlower layer.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "depth": {
+          "description": "the longest dependency chain, in edges from a top-layer crate down to the hub.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "functions_per_module": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "generic_percent": {
+          "description": "the share of functions that are generic, so their code is generated in the calling crate.",
+          "$ref": "#/$defs/Percent"
+        },
+        "large_crate": {
+          "description": "one crate much larger than the rest, for work below the crate; null for none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LargeCrateParams"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modules_per_crate": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "crates",
+        "dependencies_per_crate",
+        "depth",
+        "functions_per_module",
+        "generic_percent",
+        "large_crate",
+        "modules_per_crate"
+      ]
+    },
+    "SandboxMode": {
+      "type": "string",
+      "enum": [
+        "enabled",
+        "disabled",
+        "relaxed"
+      ]
+    },
+    "Scenario": {
+      "oneOf": [
+        {
+          "description": "a build from an empty target directory, or of units none of which are in the store.",
+          "type": "string",
+          "const": "cold"
+        },
+        {
+          "description": "a build straight after a successful one, with nothing changed.",
+          "type": "string",
+          "const": "no-op"
+        },
+        {
+          "description": "a build after one private function's body changed.",
+          "type": "string",
+          "const": "one-function-edit"
+        },
+        {
+          "description": "a build after a public signature changed in a crate many others depend on.",
+          "type": "string",
+          "const": "public-signature-edit"
+        },
+        {
+          "description": "a build after an edit to the hub's crate directory that rustc never reads, so the rebuilt\nunit's output is byte-identical and everything downstream has to be skipped.",
+          "type": "string",
+          "const": "identical-output-edit"
+        },
+        {
+          "description": "a wide graph of do-nothing units, every one built: the fixed cost an executor adds per unit.",
+          "type": "string",
+          "const": "unit-overhead"
+        },
+        {
+          "description": "a chain of do-nothing units, every one built in turn: the latency an executor adds per\nlevel of depth.",
+          "type": "string",
+          "const": "latency-floor"
+        },
+        {
+          "description": "fetching every unit's sources and outputs, through their root manifest, from a local\nbinary cache into a store that has none of them.",
+          "type": "string",
+          "const": "substitution"
+        },
+        {
+          "description": "collecting garbage in a store where rooted manifests keep some unit paths and the rest\nare unrooted.",
+          "type": "string",
+          "const": "garbage-collection"
+        },
+        {
+          "description": "adding a batch of new content-addressed paths to the store.",
+          "type": "string",
+          "const": "path-registration"
+        }
+      ]
+    },
+    "Setting_SandboxMode": {
+      "description": "a setting's value for a run, or the fact that the implementation has no such setting.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/SandboxMode"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unsupported"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      ]
+    },
+    "Setting_boolean": {
+      "description": "a setting's value for a run, or the fact that the implementation has no such setting.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unsupported"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      ]
+    },
+    "Setting_uint32": {
+      "description": "a setting's value for a run, or the fact that the implementation has no such setting.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unsupported"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      ]
+    },
+    "Sha256": {
+      "description": "a SHA-256 digest in lowercase hex.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Shape": {
+      "oneOf": [
+        {
+          "description": "independent units with no inputs, for throughput.",
+          "type": "string",
+          "const": "wide"
+        },
+        {
+          "description": "each unit takes the one before it as its only input, for latency.",
+          "type": "string",
+          "const": "chain"
+        }
+      ]
+    },
+    "Step": {
+      "description": "a kind of step an executor pays for in a build. each is its own bucket, so a cost the product\nwould pay can't hide inside another step or outside the timer.",
+      "oneOf": [
+        {
+          "description": "reading and writing the executor's own record of each unit's source and output, which a\nno-op and an edit start from.",
+          "type": "string",
+          "const": "state"
+        },
+        {
+          "description": "opening the executor's connections to the store, which every command pays again.",
+          "type": "string",
+          "const": "connect"
+        },
+        {
+          "description": "finding which unit sources changed: stats, reads and NAR hashing of the working tree.",
+          "type": "string",
+          "const": "source-scan"
+        },
+        {
+          "description": "adding changed unit sources to the store as content-addressed paths.",
+          "type": "string",
+          "const": "source-add"
+        },
+        {
+          "description": "asking the store which paths are already valid.",
+          "type": "string",
+          "const": "validity-query"
+        },
+        {
+          "description": "computing `.drv` contents and paths in memory.",
+          "type": "string",
+          "const": "drv-synthesis"
+        },
+        {
+          "description": "sending `.drv` files to the store.",
+          "type": "string",
+          "const": "drv-write"
+        },
+        {
+          "description": "a build request to the daemon, from send to reply: its sandbox setup and the builder\nitself are inside, because the daemon reports neither apart.",
+          "type": "string",
+          "const": "build"
+        },
+        {
+          "description": "re-adding built outputs at the content-addressed path their bytes give.",
+          "type": "string",
+          "const": "readdress"
+        },
+        {
+          "description": "adding outputs an executor produced itself to the store by content.",
+          "type": "string",
+          "const": "output-add"
+        },
+        {
+          "description": "writing the root manifest and registering its root.",
+          "type": "string",
+          "const": "rooting"
+        },
+        {
+          "description": "setting up a sandbox the executor owns: namespaces, mounts and identity maps.",
+          "type": "string",
+          "const": "sandbox-setup"
+        },
+        {
+          "description": "creating the process a unit runs in, up to the point its sandbox setup starts.",
+          "type": "string",
+          "const": "process-start"
+        },
+        {
+          "description": "running the compiler or builder itself, from exec to exit.",
+          "type": "string",
+          "const": "compile"
+        },
+        {
+          "description": "a unit's warm incremental state outside the compile: recording the session it starts\nfrom, counting what rustc reused, and canonicalizing the rlib an incremental build writes.",
+          "type": "string",
+          "const": "incremental-state"
+        },
+        {
+          "description": "fetching paths from a binary cache into the store.",
+          "type": "string",
+          "const": "substitution"
+        },
+        {
+          "description": "the daemon's garbage collection.",
+          "type": "string",
+          "const": "garbage-collection"
+        }
+      ]
+    },
+    "Text": {
+      "description": "non-blank text.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "Transport": {
+      "oneOf": [
+        {
+          "description": "the worker protocol over the local daemon's unix socket.",
+          "type": "string",
+          "const": "daemon-socket"
+        },
+        {
+          "description": "the Nix command-line tools.",
+          "type": "string",
+          "const": "cli"
+        },
+        {
+          "description": "the worker protocol to `nix-daemon --stdio` over ssh.",
+          "type": "string",
+          "const": "ssh-ng"
+        }
+      ]
+    },
+    "Version2": {
+      "const": 2
+    },
+    "Warm": {
+      "description": "the warm state an incremental build's units carried in.",
+      "type": "object",
+      "properties": {
+        "reused": {
+          "description": "how many of those rustc took from the seeded session instead of rebuilding.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "seeded": {
+          "description": "built units that started from a session of an earlier build.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "work_products": {
+          "description": "object work products in the sessions the built units finalized.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "seeded",
+        "work_products",
+        "reused"
+      ]
+    }
+  }
+}

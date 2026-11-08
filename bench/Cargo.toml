@@ -1,0 +1,23 @@
+[package]
+name = "shikumi-bench"
+version = "0.1.0"
+description = "Fixture generators, the Cargo baseline runner and the result record contract"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+clap.workspace = true
+libc.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

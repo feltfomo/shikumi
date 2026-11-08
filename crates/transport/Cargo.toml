@@ -1,0 +1,27 @@
+[package]
+name = "shikumi-transport"
+version = "0.1.0"
+description = "The store transport interface and its implementations over the worker protocol and the Nix CLI"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+shikumi-derivation.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[features]
+# the requests the conformance harness sends to record each daemon's trust answers.
+trust-probes = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["time"] }
+
+[lints]
+workspace = true

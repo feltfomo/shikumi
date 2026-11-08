@@ -1,0 +1,19 @@
+[package]
+name = "shikumi-conformance"
+version = "0.1.0"
+description = "Checks Shikumi's computed store paths, early cutoff and roots against a live daemon, as an untrusted user"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+clap.workspace = true
+shikumi-derivation.workspace = true
+shikumi-outputs.workspace = true
+shikumi-transport = { workspace = true, features = ["trust-probes"] }
+tokio = { workspace = true, features = ["time"] }
+
+[lints]
+workspace = true

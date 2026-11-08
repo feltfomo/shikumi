@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shikumi overhead unit graph",
+  "description": "a validated unit graph: unique names, inputs that name earlier units, and a structure that\nmatches its declared shape.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/Version1"
+    },
+    "shape": {
+      "$ref": "#/$defs/Shape"
+    },
+    "units": {
+      "description": "in dependency order: every unit appears after all of its inputs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Unit"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "shape",
+    "units"
+  ],
+  "$defs": {
+    "Action": {
+      "description": "what a unit's builder does.",
+      "oneOf": [
+        {
+          "description": "create an empty output and nothing else. an executor must not add a setup environment, such\nas nixpkgs' stdenv, whose own cost would hide the floor being measured.",
+          "type": "string",
+          "const": "empty-output"
+        }
+      ]
+    },
+    "Identifier": {
+      "description": "a lowercase name: a letter, then letters, digits and hyphens.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "Shape": {
+      "oneOf": [
+        {
+          "description": "independent units with no inputs, for throughput.",
+          "type": "string",
+          "const": "wide"
+        },
+        {
+          "description": "each unit takes the one before it as its only input, for latency.",
+          "type": "string",
+          "const": "chain"
+        }
+      ]
+    },
+    "Unit": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "inputs": {
+          "description": "units whose outputs must exist before this one runs. each names an earlier unit.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "name": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "inputs",
+        "action"
+      ]
+    },
+    "Version1": {
+      "const": 1
+    }
+  }
+}

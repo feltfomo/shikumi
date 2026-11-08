@@ -1,0 +1,15 @@
+[package]
+name = "shikumi-derivation"
+version = "0.1.0"
+description = "Store paths, NAR serialization and derivation synthesis, bit for bit as Nix computes them"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sha2.workspace = true
+
+[lints]
+workspace = true
