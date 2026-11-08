@@ -6,6 +6,7 @@ pub mod contract;
 pub mod fixture;
 pub mod measure;
 pub mod record;
+pub mod steps;
 
 mod rng;
 

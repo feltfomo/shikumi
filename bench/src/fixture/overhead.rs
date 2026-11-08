@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::contract::{ContractError, Identifier, Sha256, Version};
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, clap::ValueEnum,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, clap::ValueEnum,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Shape {
@@ -20,6 +20,16 @@ pub enum Shape {
     Wide,
     /// each unit takes the one before it as its only input, for latency.
     Chain,
+}
+
+impl Shape {
+    /// the longest dependency chain in a graph of this shape, in edges.
+    pub fn depth(self, units: NonZeroU32) -> u32 {
+        match self {
+            Self::Wide => 0,
+            Self::Chain => units.get() - 1,
+        }
+    }
 }
 
 /// what a unit's builder does.

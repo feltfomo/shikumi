@@ -13,7 +13,7 @@ use shikumi_bench::fixture::rust_workspace::{
     LargeCrateParams, Percent, RustWorkspace, RustWorkspaceParams,
 };
 use shikumi_bench::measure;
-use shikumi_bench::record::Record;
+use shikumi_bench::record::{Record, Validator};
 
 #[derive(Debug, Parser)]
 #[command(name = "shikumi-bench", version, about = "Shikumi's benchmark harness")]
@@ -30,7 +30,9 @@ enum Command {
         about = "Build generated workspaces with plain Cargo through every scenario and append one record per build"
     )]
     CargoBaseline(BaselineArgs),
-    #[command(about = "Check that every line of a records file is a valid record")]
+    #[command(
+        about = "Check that every line of a records file is a valid record whose fixture regenerates to the digest it names"
+    )]
     Validate {
         #[arg(help = "A JSON lines file of records")]
         records: PathBuf,
@@ -199,10 +201,14 @@ fn validate(path: &PathBuf) -> Result<(), String> {
     let file = fs::File::open(path).map_err(|e| format!("opening {}: {e}", path.display()))?;
     let mut count = 0usize;
     let mut failures = 0usize;
+    let mut validator = Validator::default();
     for (index, line) in io::BufReader::new(file).lines().enumerate() {
         let line = line.map_err(|e| format!("reading {}: {e}", path.display()))?;
-        match Record::from_json_line(&line) {
-            Ok(_) => count += 1,
+        let checked = Record::from_json_line(&line)
+            .map_err(|e| e.to_string())
+            .and_then(|record| validator.check(&record).map_err(|e| e.to_string()));
+        match checked {
+            Ok(()) => count += 1,
             Err(e) => {
                 failures += 1;
                 eprintln!("{}:{}: {e}", path.display(), index + 1);

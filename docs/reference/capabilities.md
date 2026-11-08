@@ -382,11 +382,21 @@ Every candidate's and every backend's speed claims are measured with the same fi
   the same bytes on every release, and generating prints the fixture's digest.
 - **An overhead fixture.** A graph of units whose builders do nothing, wide for throughput or a chain
   for latency, so a measurement of it is the floor cost an executor adds per unit.
-- **The Cargo baseline.** Plain Cargo builds a generated workspace through four scenarios, cold,
-  no-op, a private function edit and a public signature edit, with incremental compilation on and off.
-- **The result record.** One JSON line per measured build, in a published schema at version 1, so
-  comparing a candidate with the baseline is a join on the record's fields. `validate` checks a
-  records file against it.
+- **The Cargo baseline.** Plain Cargo builds a generated workspace in place, each build reusing the
+  session the previous one left, through five scenarios: cold, no-op, a private function edit, a
+  public signature edit, and an edit to a file in the hub's crate directory that rustc never reads,
+  whose rebuilt output is byte-identical. It runs with incremental compilation on and off.
+- **The result record.** One JSON line per measured build, in a published schema at version 2, so
+  comparing a candidate with the baseline is a join on the record's fields. Each record carries its
+  wall and CPU time, a bucket per kind of step the build paid for, and the outcome its scenario
+  claims: units built and skipped against the fixture's model, bytes sent, the outputs' identity
+  against a reference, and, for incremental units, how many started from a session and how much of
+  it rustc reused. Scenarios cover the Rust fixture, the overhead fixture's per-unit overhead and
+  latency floor, substitution, garbage collection and path registration.
+- **Self-checking records.** A record doesn't parse unless its buckets cover every step its
+  mechanism pays in its scenario, inside its timer, and its outcome matches the fixture's model.
+  `validate` also regenerates each fixture from its seed and parameters and refuses a digest that
+  doesn't match.
 
 The record's schema and the overhead fixture's unit graph schema are tracked in `bench/schema/`.
 [Contributing](../contributing.md#the-benchmark-harness) has the commands.

@@ -19,7 +19,7 @@ use crate::rng::SplitMix64;
 
 /// the shape of a generated workspace. the types hold each count above zero; [`Self::validate`]
 /// holds the rules between counts, and a record checks them when it's read.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(transform = crate::contract::require_all_properties)]
 pub struct RustWorkspaceParams {
@@ -39,7 +39,7 @@ pub struct RustWorkspaceParams {
     pub large_crate: Option<LargeCrateParams>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LargeCrateParams {
     pub modules: NonZeroU32,
@@ -49,7 +49,7 @@ pub struct LargeCrateParams {
 }
 
 /// a whole percentage, 0 to 100.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 pub struct Percent(u8);
 
@@ -126,6 +126,25 @@ pub enum Edit {
     /// makes the hub's public `api` generic over `Into<u64>`. every caller still compiles, but the
     /// hub's interface changes, so everything that depends on it has to be checked again.
     PublicSignature,
+    /// adds a notes file to the hub's crate directory, which rustc never reads. a unit whose input
+    /// is the crate directory rebuilds and produces the same bytes, so early cutoff has to stop
+    /// the rebuild there. it's the only edit that can: rustc 1.99 hashes the raw bytes of every
+    /// source file it reads into the crate's metadata, so changing a read file, even a comment of
+    /// the same length, changes the rlib.
+    IdenticalOutput,
+}
+
+/// what makes a unit rebuild, which decides how many units an edit costs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tracking {
+    /// Cargo's rule: a crate rebuilds when a file rustc read for it changed, or when a crate it
+    /// depends on rebuilt. a file rustc never read isn't tracked.
+    ReadFiles,
+    /// a unit rebuilds when any file in its crate directory changed, or when the bytes of an
+    /// input's output changed. a dependent's bytes change whenever its dependency's metadata does,
+    /// since rustc records the dependency's crate hash in it, so only an unchanged output stops the
+    /// rebuild.
+    UnitOutputs,
 }
 
 /// the edits applied to a workspace so far. a set, so applying one twice or in another order can't
@@ -134,6 +153,7 @@ pub enum Edit {
 pub struct Edits {
     one_function: bool,
     public_signature: bool,
+    identical_output: bool,
 }
 
 impl Edits {
@@ -141,6 +161,7 @@ impl Edits {
         match edit {
             Edit::OneFunction => self.one_function = true,
             Edit::PublicSignature => self.public_signature = true,
+            Edit::IdenticalOutput => self.identical_output = true,
         }
         self
     }
@@ -149,6 +170,7 @@ impl Edits {
         match edit {
             Edit::OneFunction => self.one_function,
             Edit::PublicSignature => self.public_signature,
+            Edit::IdenticalOutput => self.identical_output,
         }
     }
 }
@@ -300,6 +322,12 @@ impl RustWorkspace {
         let edits = applied.with(edit);
         let target = self.target(edit);
         let krate = &self.crates[target];
+        if edit == Edit::IdenticalOutput {
+            return Patch {
+                path: format!("crates/{}/NOTES.md", krate.name),
+                contents: format!("Notes on {}, which the build never reads.\n", krate.name),
+            };
+        }
         let contents = self.lib(
             krate,
             target == self.target(Edit::OneFunction) && edits.contains(Edit::OneFunction),
@@ -311,11 +339,18 @@ impl RustWorkspace {
         }
     }
 
-    /// how many crates a build after `edit` must recompile: the edited crate and every crate that
-    /// reaches it. Cargo has no early cutoff, so a dependent recompiles even when the interface it
-    /// sees didn't change.
-    pub fn units_rebuilt_by(&self, edit: Edit) -> u32 {
+    /// how many units a build after `edit` must compile under `tracking`: the edited crate if the
+    /// edit reaches what it tracks, and every crate that reaches one whose output changed.
+    pub fn units_rebuilt_by(&self, edit: Edit, tracking: Tracking) -> u32 {
         let target = self.target(edit);
+        match (edit, tracking) {
+            // Cargo never tracks a file rustc didn't read.
+            (Edit::IdenticalOutput, Tracking::ReadFiles) => return 0,
+            // the edited unit rebuilds, and its unchanged output stops the rebuild there.
+            (Edit::IdenticalOutput, Tracking::UnitOutputs) => return 1,
+            // the output changes, so every crate that reaches it rebuilds.
+            (Edit::OneFunction | Edit::PublicSignature, _) => {}
+        }
         // dependencies always have lower indices, so one forward pass sees every crate's
         // dependencies before the crate itself.
         let mut affected = vec![false; self.crates.len()];
@@ -325,10 +360,28 @@ impl RustWorkspace {
         affected.iter().filter(|&&a| a).count() as u32
     }
 
+    /// the longest dependency chain in edges, the large crate's included.
+    pub fn graph_depth(&self) -> u32 {
+        let mut chain = vec![0u32; self.crates.len()];
+        for (index, krate) in self.crates.iter().enumerate() {
+            chain[index] = krate.deps.iter().map(|&d| chain[d] + 1).max().unwrap_or(0);
+        }
+        chain.into_iter().max().unwrap_or(0)
+    }
+
+    /// each crate's name with the indices of the crates it depends on directly, in dependency
+    /// order: every crate comes after its dependencies.
+    pub fn crate_graph(&self) -> Vec<(&str, &[usize])> {
+        self.crates
+            .iter()
+            .map(|krate| (krate.name.as_str(), krate.deps.as_slice()))
+            .collect()
+    }
+
     fn target(&self, edit: Edit) -> usize {
         match edit {
             Edit::OneFunction => self.crates.len() - 1,
-            Edit::PublicSignature => HUB,
+            Edit::PublicSignature | Edit::IdenticalOutput => HUB,
         }
     }
 
@@ -627,8 +680,19 @@ mod tests {
     fn rebuild_counts_follow_the_dependency_model() {
         let ws = RustWorkspace::generate(3, small()).unwrap();
         // the large crate is a leaf, and every crate reaches the hub.
-        assert_eq!(ws.units_rebuilt_by(Edit::OneFunction), 1);
-        assert_eq!(ws.units_rebuilt_by(Edit::PublicSignature), 7);
+        for tracking in [Tracking::ReadFiles, Tracking::UnitOutputs] {
+            assert_eq!(ws.units_rebuilt_by(Edit::OneFunction, tracking), 1);
+            assert_eq!(ws.units_rebuilt_by(Edit::PublicSignature, tracking), 7);
+        }
+        // the unread file: Cargo never sees it, a unit sees it and cuts off at the hub.
+        assert_eq!(
+            ws.units_rebuilt_by(Edit::IdenticalOutput, Tracking::ReadFiles),
+            0
+        );
+        assert_eq!(
+            ws.units_rebuilt_by(Edit::IdenticalOutput, Tracking::UnitOutputs),
+            1
+        );
         let no_large = RustWorkspace::generate(
             3,
             RustWorkspaceParams {
@@ -637,8 +701,53 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(no_large.units_rebuilt_by(Edit::OneFunction), 1);
-        assert_eq!(no_large.units_rebuilt_by(Edit::PublicSignature), 6);
+        assert_eq!(
+            no_large.units_rebuilt_by(Edit::OneFunction, Tracking::UnitOutputs),
+            1
+        );
+        assert_eq!(
+            no_large.units_rebuilt_by(Edit::PublicSignature, Tracking::UnitOutputs),
+            6
+        );
+    }
+
+    #[test]
+    fn graph_depth_counts_the_large_crate_on_top() {
+        let ws = RustWorkspace::generate(3, small()).unwrap();
+        let without = RustWorkspace::generate(
+            3,
+            RustWorkspaceParams {
+                large_crate: None,
+                ..small()
+            },
+        )
+        .unwrap();
+        assert_eq!(without.graph_depth(), 3);
+        // the large crate depends on some of the others, so it sits one edge above one of them.
+        assert!((1..=4).contains(&ws.graph_depth()), "{}", ws.graph_depth());
+        let graph = ws.crate_graph();
+        assert_eq!(graph.len(), 7);
+        assert!(
+            graph
+                .iter()
+                .enumerate()
+                .all(|(i, (_, deps))| deps.iter().all(|&d| d < i))
+        );
+    }
+
+    #[test]
+    fn the_identical_output_edit_adds_one_unread_file_to_the_hub() {
+        let ws = RustWorkspace::generate(3, small()).unwrap();
+        let patch = ws.patch(Edit::IdenticalOutput, Edits::default());
+        assert_eq!(patch.path, "crates/c0000/NOTES.md");
+        assert!(ws.render().get(&patch.path).is_none());
+        assert_eq!(
+            patch,
+            ws.patch(
+                Edit::IdenticalOutput,
+                Edits::default().with(Edit::PublicSignature)
+            )
+        );
     }
 
     #[test]

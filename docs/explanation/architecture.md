@@ -359,7 +359,7 @@ Its lifetime rules, each with a test that drives it:
 | Lock | JSON lines with a schema, one artifact per line, sorted and sharded | core | core, reviewers, grep |
 | Build trace | JSON lines with a schema | core | benchmarks, profiling tools |
 | Cache manifest | JSON with a schema | core | core on other machines |
-| Benchmark record | JSON lines with a schema, `record.schema.json` version 1 | benchmark harness | benchmark comparisons, the execution measurement, every backend's speed claims |
+| Benchmark record | JSON lines with a schema, `record.schema.json` version 2 | benchmark harness | benchmark comparisons, the execution measurement, every backend's speed claims |
 | Overhead fixture graph | JSON with a schema, `overhead-units.schema.json` version 1 | benchmark harness | the execution measurement |
 
 A contract changes only through a reviewed design change, by a version bump its schema records. The

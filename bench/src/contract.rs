@@ -242,3 +242,20 @@ pub(crate) fn require_all_properties(schema: &mut Schema) {
         .collect();
     object.insert("required".to_owned(), serde_json::Value::Array(required));
 }
+
+/// [`require_all_properties`] for each variant of an internally tagged enum, whose schema is a
+/// `oneOf` of object schemas.
+pub(crate) fn require_all_variant_properties(schema: &mut Schema) {
+    let Some(variants) = schema
+        .as_object_mut()
+        .and_then(|object| object.get_mut("oneOf"))
+        .and_then(|variants| variants.as_array_mut())
+    else {
+        return;
+    };
+    for variant in variants {
+        if let Ok(variant) = <&mut Schema>::try_from(variant) {
+            require_all_properties(variant);
+        }
+    }
+}
