@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shikumi.registry",
+  "description": "every project a repository composes, as Shikumi's declaration layer checked them, or every\nfinding that refused them.",
+  "type": "object",
+  "properties": {
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      }
+    },
+    "focus": {
+      "description": "the project a focused composition centres on, or null for the global composition.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Identifier"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projects": {
+      "description": "every composed project, or null when the document carries a diagnostic.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z][a-z0-9-]*$": {
+          "$ref": "#/$defs/Project"
+        }
+      }
+    },
+    "remainder": {
+      "description": "the global composition's remainder; null in a focused one, and when the document carries a\ndiagnostic.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Remainder"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "$ref": "#/$defs/SchemaName"
+    },
+    "version": {
+      "$ref": "#/$defs/Version"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "diagnostics",
+    "focus",
+    "projects",
+    "remainder",
+    "schema",
+    "version"
+  ],
+  "$defs": {
+    "Code": {
+      "description": "what kind of rule a finding broke. the message says it for people; the code is for programs.",
+      "type": "string",
+      "enum": [
+        "missing",
+        "type",
+        "invalid",
+        "enum",
+        "unknown-option",
+        "conflict",
+        "store-reference",
+        "location",
+        "unknown-reference",
+        "duplicate",
+        "no-declaration",
+        "overlap"
+      ]
+    },
+    "Command": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ]
+    },
+    "Diagnostic": {
+      "description": "one finding from the declaration layer, naming where it was defined.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/Code"
+        },
+        "files": {
+          "description": "the files that defined it, relative to the repository root. a file outside the repository\nisn't named, and the message says one was involved.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelativePath"
+          }
+        },
+        "message": {
+          "$ref": "#/$defs/Text"
+        },
+        "option": {
+          "description": "the option path inside the declaration or manifest, null for a finding about the whole\ncomposition.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "files",
+        "message",
+        "option",
+        "project",
+        "severity"
+      ]
+    },
+    "Identifier": {
+      "description": "a lowercase name: a letter, then letters, digits and hyphens.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "NonEmpty_Text": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Text"
+      },
+      "minItems": 1
+    },
+    "Project": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Command"
+            }
+          }
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "extensions": {
+          "description": "each namespace's value exactly as the repository declared it, checked against the schema\nthe repository supplied for it. Shikumi gives none of it a meaning.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": true
+          }
+        },
+        "maintainers": {
+          "$ref": "#/$defs/NonEmpty_Text"
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Service"
+            }
+          }
+        },
+        "steps": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Step"
+            }
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "summary",
+        "maintainers",
+        "dependsOn",
+        "steps",
+        "commands",
+        "services",
+        "extensions"
+      ]
+    },
+    "RelativePath": {
+      "description": "a normalized path relative to the repository root.",
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$"
+    },
+    "Remainder": {
+      "description": "the scope of every source no project owns: the repository minus these directories.",
+      "type": "object",
+      "properties": {
+        "excludes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelativePath"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "excludes"
+      ]
+    },
+    "Restart": {
+      "type": "string",
+      "enum": [
+        "never",
+        "on-failure",
+        "always"
+      ]
+    },
+    "SchemaName": {
+      "const": "shikumi.registry"
+    },
+    "Service": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/Text"
+        },
+        "restart": {
+          "$ref": "#/$defs/Restart"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "restart"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "error"
+      ]
+    },
+    "Step": {
+      "description": "a step as the document carries it. its command line is declared and never copied here.",
+      "type": "object",
+      "properties": {
+        "after": {
+          "description": "steps of the same project this one runs after when both run.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "after"
+      ]
+    },
+    "Text": {
+      "description": "non-blank text.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "Version": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ]
+    }
+  }
+}

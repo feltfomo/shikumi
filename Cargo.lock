@@ -434,6 +434,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "shikumi"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "shikumi-registry",
+]
+
+[[package]]
 name = "shikumi-bench"
 version = "0.1.0"
 dependencies = [
@@ -471,6 +479,17 @@ dependencies = [
  "shikumi-derivation",
  "shikumi-transport",
  "tokio",
+]
+
+[[package]]
+name = "shikumi-registry"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

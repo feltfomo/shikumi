@@ -1,0 +1,103 @@
+{
+  "schema": "shikumi.registry",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "focus": null,
+  "projects": {
+    "core": {
+      "directory": "libs/core",
+      "summary": "The shared core library",
+      "maintainers": [
+        "core-team"
+      ],
+      "dependsOn": [],
+      "steps": {
+        "build": {
+          "description": "Compile the library",
+          "after": []
+        },
+        "test": {
+          "description": "Run the unit tests",
+          "after": [
+            "build"
+          ]
+        }
+      },
+      "commands": {},
+      "services": {},
+      "extensions": {
+        "team": {
+          "owner": "platform",
+          "tier": "critical"
+        }
+      }
+    },
+    "docs": {
+      "directory": "docs",
+      "summary": "The documentation site",
+      "maintainers": [
+        "writers"
+      ],
+      "dependsOn": [
+        "web"
+      ],
+      "steps": {},
+      "commands": {
+        "preview": {
+          "description": "Preview the docs"
+        }
+      },
+      "services": {},
+      "extensions": {
+        "layout": {
+          "pages": [
+            "pages/**/*.md"
+          ]
+        }
+      }
+    },
+    "web": {
+      "directory": "apps/web",
+      "summary": "The web front end",
+      "maintainers": [
+        "web-team",
+        "design"
+      ],
+      "dependsOn": [
+        "core"
+      ],
+      "steps": {
+        "bundle": {
+          "description": "Bundle the site",
+          "after": []
+        }
+      },
+      "commands": {
+        "serve": {
+          "description": "Serve the site locally"
+        }
+      },
+      "services": {
+        "database": {
+          "description": "A local database for development",
+          "restart": "on-failure"
+        }
+      },
+      "extensions": {
+        "team": {
+          "owner": "web"
+        }
+      }
+    }
+  },
+  "remainder": {
+    "excludes": [
+      "apps/web",
+      "docs",
+      "libs/core"
+    ]
+  },
+  "diagnostics": []
+}
