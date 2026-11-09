@@ -34,7 +34,9 @@
         "x86_64-linux"
       ];
 
-      # only what Cargo reads, so editing Markdown or Nix doesn't rebuild the Rust checks.
+      # only what Cargo reads, so editing Markdown or Nix doesn't rebuild the Rust checks. the
+      # fixture repositories are among it, since the registry crate's tests render findings against
+      # their files.
       rustSource = lib.fileset.toSource {
         root = ./.;
         fileset = lib.fileset.unions [
@@ -43,6 +45,7 @@
           ./crates
           ./bench
           ./tools
+          ./nix/declarations/tests/fixtures
         ];
       };
 
@@ -186,7 +189,9 @@
               fixtures = sourceOf ./nix/declarations/tests/fixtures;
               planted = sourceOf ./nix/declarations/tests/planted;
               worktreeLeak = sourceOf ./nix/declarations/tests/worktree-leak;
-              expectedDocument = ./crates/registry/fixtures/basic/document.json;
+              references = sourceOf ./crates/registry/fixtures;
+              vocabulary = ./crates/registry/fixtures/vocabulary.json;
+              referencePage = ./docs/reference/declarations.md;
             }
             // {
               # rustfmt reads sources only, so this check leaves out the vendored dependencies and
@@ -236,6 +241,10 @@
               private-names = repoCheckRun {
                 name = "private-names";
                 subcommand = "names";
+              };
+              docs-history = repoCheckRun {
+                name = "docs-history";
+                subcommand = "history";
               };
             };
 

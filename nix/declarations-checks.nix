@@ -14,14 +14,19 @@
   layer,
   # all of nix/declarations, since the unit tests import the layer from beside them.
   tests,
+  # what the vocabulary's constructors build for the unit tests' schema, tracked beside the
+  # checker that reads it.
+  vocabulary,
   # the fixture repositories, the planted cases and the worktree leak, each on its own.
   fixtures,
   planted,
   worktreeLeak,
-  # the basic fixture's document, tracked beside the registry crate. every implementation has to
-  # write exactly these bytes, which keeps them identical to each other and to what the registry
-  # crate's tests render.
-  expectedDocument,
+  # the tracked references for each fixture, beside the registry crate whose tests read them too.
+  # every implementation has to write exactly these bytes, which keeps them identical to each
+  # other and to what the crate's tests check.
+  references,
+  # the tracked declarations reference page.
+  referencePage,
 }:
 let
   inherit (pkgs) lib;
@@ -52,8 +57,73 @@ in
         ${prelude}
         nix-unit --eval-store "$TMPDIR/store" --option store "$TMPDIR/store" \
           --option allow-import-from-derivation false \
-          ${tests}/tests/default.nix --argstr nixpkgs ${nixpkgs}
+          ${tests}/tests/default.nix --argstr nixpkgs ${nixpkgs} \
+          --argstr homeManager ${pkgs.home-manager.src} --argstr vocabulary ${vocabulary}
         touch $out
+      '';
+
+  # the reference page is generated from the vocabulary the checker checks with, and fails here
+  # when the tracked page says anything else.
+  declarations-reference =
+    pkgs.runCommand "declarations-reference"
+      {
+        nativeBuildInputs = [
+          shikumi
+          pkgs.diffutils
+        ];
+      }
+      ''
+        shikumi registry reference > generated.md
+        diff -u ${referencePage} generated.md || {
+          echo "docs/reference/declarations.md is stale; regenerate it with shikumi registry reference" >&2
+          exit 1
+        }
+        touch $out
+      '';
+
+  # the CLI end to end, on one implementation: the serialized declarations are what differ between
+  # implementations, and the `registry-no-builds-*` checks hold those on each. this holds the exit
+  # codes, where each output goes, and the rendered findings as a person sees them.
+  registry-cli =
+    pkgs.runCommand "registry-cli"
+      {
+        nativeBuildInputs = [
+          shikumi
+          pkgs.nixVersions.nix_2_35
+          pkgs.diffutils
+        ];
+      }
+      ''
+        ${prelude}
+        mkdir -p $out
+
+        # runs shikumi with stdout and stderr in $out/$1, failing unless it exits with $2.
+        run() {
+          local name=$1 expected=$2 status=0
+          shift 2
+          shikumi "$@" > $out/$name 2> $out/$name.stderr || status=$?
+          if [ "$status" -ne "$expected" ]; then
+            echo "shikumi $* exited $status, not $expected:" >&2
+            cat $out/$name.stderr >&2
+            exit 1
+          fi
+        }
+
+        run basic.document.json 0 registry document --root ${fixtures}/basic
+        diff -u ${references}/basic/document.json $out/basic.document.json
+        echo "basic: accepted, with the tracked document on stdout"
+
+        # the check view prints what it was asked for, the findings, on stdout.
+        run broken.findings.txt 1 registry check --root ${fixtures}/broken
+        diff -u ${references}/broken/findings.txt $out/broken.findings.txt
+        grep -q 'the declarations are refused, with' $out/broken.findings.txt.stderr
+
+        # every other view renders the findings on stderr, prints nothing, and fails.
+        run broken.list 1 registry list --root ${fixtures}/broken
+        [ ! -s $out/broken.list ]
+        diff -u ${references}/broken/findings.txt <(grep -v '^shikumi: ' $out/broken.list.stderr)
+        grep -q '^shikumi: the declarations are refused, with' $out/broken.list.stderr
+        echo "broken: refused, with the tracked findings where each view puts them"
       '';
 
   # identical across worktrees, and nothing written into the checkout. the basic fixture becomes a
@@ -141,7 +211,7 @@ in
       }
       ''
         bash ${./declarations-no-builds.sh} ${layer} ${nixpkgs} ${fixtures} ${planted} \
-          ${expectedDocument} $out
+          ${references} $out
       ''
   )
 ) implementations
