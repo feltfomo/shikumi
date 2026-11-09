@@ -13,6 +13,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use crate::contract::render_json;
 use crate::declarations;
 use crate::document::{self, Diagnostic, Identifier, Project, Registry, RegistryError};
+use crate::evaluation;
 use crate::produce::{ProduceError, Producer};
 use crate::reference;
 use crate::render::{Sources, render};
@@ -55,7 +56,7 @@ enum View {
         #[arg(
             value_enum,
             default_value_t = Schema::Registry,
-            help = "The registry document's schema, or the serialized declarations'"
+            help = "The registry document's schema, the serialized declarations', or an evaluation answer's"
         )]
         of: Schema,
     },
@@ -67,6 +68,7 @@ enum View {
 enum Schema {
     Registry,
     Declarations,
+    Evaluation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -163,6 +165,7 @@ pub fn run(
         View::Schema { of } => match of {
             Schema::Registry => render_json(&document::schema()),
             Schema::Declarations => render_json(&declarations::schema()),
+            Schema::Evaluation => render_json(&evaluation::schema()),
         },
         View::Reference => reference::page(),
     };

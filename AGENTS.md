@@ -68,15 +68,18 @@ output for the current system:
   against a copy of flake-parts' option declarations.
 - `registry-no-builds-cppnix-2-35`, `registry-no-builds-determinate-3-24`, `registry-no-builds-lix-2-95`
   and `registry-no-builds-lix-2-96`: under that implementation, the packaged `shikumi` serializes the
-  basic and broken fixtures' declarations exactly as `crates/registry/fixtures/` holds them, and
-  refuses each planted declaration under `nix/declarations/tests/planted/`, which reaches for a
-  build's output or a program; a control evaluation without the producer's refusals has to reach
-  it. The document and the rendered findings those declarations give are held by the registry
-  crate's tests. Defined, with the next two, in `nix/declarations-checks.nix`, and run by
-  `nix/declarations-no-builds.sh`.
+  basic and broken fixtures' declarations exactly as `crates/registry/fixtures/` holds them, and refuses
+  each planted declaration under `nix/declarations/tests/planted/`, which reaches for a build's output
+  or a program; a control evaluation without the producer's refusals has to reach it. The failures
+  fixture's evaluation failures classify as the tracked reference has them, every project evaluated
+  beside the others on one core matches it focused on alone, and a fault planted in a copy of the layer
+  comes back as a Shikumi bug. The findings as that implementation renders them are kept in the result,
+  and fail the check if they name Shikumi's own files or a store path. The document and the rendered
+  findings those declarations give are held by the registry crate's tests. Defined, with the next two,
+  in `nix/declarations-checks.nix`, and run by `nix/declarations-no-builds.sh`.
 - `registry-cli`: the packaged `shikumi`, on one implementation, accepts the basic fixture with its
-  tracked document and refuses the broken one with its tracked findings, each on the stream and
-  with the exit code each view uses.
+  tracked document and refuses the broken and failures fixtures with their tracked findings, each on the
+  stream and with the exit code each view uses, and a manifest that doesn't parse with one finding.
 - `registry-worktrees`: the document from two Git worktrees of one commit at different paths is
   byte-identical, neither worktree's files change, and a planted location leak makes the two differ.
 - `declarations-reference`: `docs/reference/declarations.md` is exactly what `shikumi registry

@@ -77,3 +77,11 @@ Text, identifiers, paths, globs and JSON strings can't contain the repository's 
 | `no-declaration` | a listed directory with no declaration file |
 | `not-a-declaration` | a declaration file that doesn't return a `shikumi.project` result |
 | `overlap` | a listed directory at or inside another project's directory |
+| `syntax` | a declaration or manifest file that isn't valid Nix |
+| `undefined-variable` | a variable a file uses that nothing defines |
+| `type-error` | evaluation stopped at an operation on a value of the wrong type, such as calling something that isn't a function |
+| `thrown` | evaluation reached a `throw` or an `abort` |
+| `assertion` | evaluation reached an `assert` whose condition is false |
+| `invalid-utf8` | text that isn't valid UTF-8, which the registry document can't carry |
+| `evaluation` | evaluation failed in a way Shikumi doesn't recognize, or the evaluator stopped without saying why |
+| `shikumi-bug` | evaluation failed inside Shikumi's own Nix, which is a bug in Shikumi rather than in the declaration |

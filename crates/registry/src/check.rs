@@ -3,35 +3,58 @@
 //! schemas, applies the rules that span projects, and returns the registry document: every project
 //! when nothing is wrong, or every finding at once when something is. nothing is thrown; each
 //! finding is collected with its code, the field's path and the nearest source position the
-//! evaluator gave, so one pass reports all of them.
+//! evaluator gave, so one pass reports all of them. a declaration whose evaluation failed becomes
+//! a finding too, placed at the user's own code, and the projects around it are still checked.
 //!
 //! cost is linear in the size of the declarations: one visit per serialized node, one sort of the
 //! manifest's directories for overlaps, one walk of each ordering graph for loops, and one map per
-//! name space for duplicates. a finding's path is a stack pushed and popped on the way down, so
-//! locating one copies nothing until the finding is made.
+//! name space for duplicates. each project is checked on its own on Rayon's pool, and the findings
+//! are put back in name order, so the document is the same however the work was split. a finding's
+//! path is a stack pushed and popped on the way down, so locating one copies nothing until the
+//! finding is made.
 
 use std::collections::BTreeMap;
 use std::fmt;
 
+use rayon::prelude::*;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::contract::{NonEmpty, RelativePath, Scalar};
-use crate::declarations::{At, Declaration, Declarations, Field, Node};
+use crate::declarations::{
+    At, Declaration, Declarations, Evaluated, Failure, FailureKind, Field, Manifest, Node, Origin,
+};
 use crate::document::{
     Code, Command, Diagnostic, Document, Identifier, Location, Project, Related, Remainder,
     SchemaName, Segment, Service, Severity, Step, Text, Version, identifier, text,
 };
 use crate::graph::{self, Edge};
+use crate::produce::MANIFEST;
 use crate::vocabulary::{self, Presence, Record, Type};
 
 /// the declaration file every listed directory holds.
 pub const DECLARATION_FILE: &str = "project.nix";
 
+/// how many of the places in the user's code that led to a failure are shown after the one it
+/// happened at; a recursion through the user's code can pass a handful of places many times.
+const RELATED_FRAMES: usize = 8;
+/// how many of Shikumi's own frames a Shikumi bug names.
+const INTERNAL_FRAMES: usize = 4;
+
 /// checks the serialized declarations of the repository at `root`, the absolute path the
 /// declarations were evaluated from, and builds the document.
 pub fn check(declarations: &Declarations, root: &str) -> Result<Document, CheckError> {
-    Checker::new(declarations, root).run()
+    match &declarations.manifest {
+        Evaluated::Value(manifest) => Checker::new(declarations, manifest, root).run(),
+        // every project's directory is the manifest's to say, so with no manifest there's nothing
+        // else to read.
+        Evaluated::Failed(failed) => {
+            let file = RelativePath::checked(MANIFEST.to_owned());
+            let (here, path, report) = failure(&file, &failed.failure);
+            let found = diagnostic(None, path, here, report);
+            Ok(document(vec![found], None, &BTreeMap::new(), Vec::new()))
+        }
+    }
 }
 
 /// the checker accepted a declaration in a shape the registry document can't hold. the declaration
@@ -56,6 +79,7 @@ impl std::error::Error for CheckError {}
 
 struct Checker<'a> {
     declarations: &'a Declarations,
+    manifest: &'a Manifest,
     root: &'a str,
     findings: Vec<Diagnostic>,
     /// the project the findings being made belong to.
@@ -191,9 +215,10 @@ impl Shared {
 type Directories = BTreeMap<String, Option<RelativePath>>;
 
 impl<'a> Checker<'a> {
-    fn new(declarations: &'a Declarations, root: &'a str) -> Self {
+    fn new(declarations: &'a Declarations, manifest: &'a Manifest, root: &'a str) -> Self {
         Self {
             declarations,
+            manifest,
             root,
             findings: Vec::new(),
             project: None,
@@ -202,22 +227,14 @@ impl<'a> Checker<'a> {
     }
 
     fn report(&mut self, here: Here<'_>, finding: Finding) {
-        self.findings.push(Diagnostic {
-            severity: Severity::Error,
-            code: finding.code,
-            project: self.project.clone(),
-            path: self.path.clone(),
-            location: here.location(),
-            message: text(finding.message),
-            help: finding.help.map(text),
-            related: finding.related,
-        });
+        let found = diagnostic(self.project.clone(), self.path.clone(), here, finding);
+        self.findings.push(found);
     }
 
     fn run(mut self) -> Result<Document, CheckError> {
         let declarations = self.declarations;
-        let manifest = Here::File(&declarations.manifest.file);
-        let (directories, extensions) = self.manifest(&declarations.manifest.value, manifest);
+        let manifest = self.manifest;
+        let (directories, extensions) = self.manifest(&manifest.value, Here::File(&manifest.file));
 
         self.overlaps(&directories);
         let focus = self.focus(&directories);
@@ -225,14 +242,26 @@ impl<'a> Checker<'a> {
         // built once per composition: the repository's extension schemas are the same for every
         // project.
         let record = vocabulary::declaration(&extensions);
-        let mut checked = Vec::new();
-        for (name, declaration) in &declarations.projects {
-            let (Some(Some(directory)), Some(project)) = (directories.get(name), identifier(name))
-            else {
-                continue;
-            };
-            checked.push(self.project(project, directory, declaration.as_ref(), &record)?);
-        }
+        let listed: Vec<(Identifier, &RelativePath, Option<&Evaluated<Declaration>>)> =
+            declarations
+                .projects
+                .iter()
+                .filter_map(|(name, declaration)| {
+                    let directory = directories.get(name)?.as_ref()?;
+                    Some((identifier(name)?, directory, declaration.as_ref()))
+                })
+                .collect();
+        // collected in input order, so the findings stay in name order however the work was split.
+        let each: Vec<(Vec<Diagnostic>, Checked<'a>)> = listed
+            .into_par_iter()
+            .map(|(project, directory, declaration)| {
+                let mut checker = Checker::new(declarations, manifest, self.root);
+                let checked = checker.project(project, directory, declaration, &record)?;
+                Ok((checker.findings, checked))
+            })
+            .collect::<Result<_, CheckError>>()?;
+        let (findings, checked): (Vec<_>, Vec<_>) = each.into_iter().unzip();
+        self.findings.extend(findings.into_iter().flatten());
         for project in &checked {
             self.references(project, &directories);
         }
@@ -378,7 +407,7 @@ impl<'a> Checker<'a> {
         match identifier(focus) {
             Some(project) if directories.contains_key(focus) => Some(project),
             _ => {
-                let manifest = Here::File(&self.declarations.manifest.file);
+                let manifest = Here::File(&self.manifest.file);
                 self.report(
                     manifest,
                     finding(
@@ -395,7 +424,7 @@ impl<'a> Checker<'a> {
         &mut self,
         name: Identifier,
         directory: &RelativePath,
-        declaration: Option<&'a Declaration>,
+        declaration: Option<&'a Evaluated<Declaration>>,
         record: &Type,
     ) -> Result<Checked<'a>, CheckError> {
         let file = RelativePath::checked(format!("{directory}/{DECLARATION_FILE}"));
@@ -425,7 +454,13 @@ impl<'a> Checker<'a> {
                 );
                 self.path.clear();
             }
-            Some(declaration) if !declaration.factory => {
+            Some(Evaluated::Failed(failed)) => {
+                let (here, path, report) = failure(&file, &failed.failure);
+                self.path = path;
+                self.report(here, report);
+                self.path.clear();
+            }
+            Some(Evaluated::Value(declaration)) if !declaration.factory => {
                 let kind = declaration.value.kind();
                 // a function that comes back is one that asked for an argument it isn't given.
                 let help = if matches!(declaration.value, Node::Function) {
@@ -442,7 +477,7 @@ impl<'a> Checker<'a> {
                     .help(help),
                 );
             }
-            Some(declaration) => {
+            Some(Evaluated::Value(declaration)) => {
                 if let Some(value) = self.value(record, &declaration.value, Here::File(&file)) {
                     let declared = serde_json::from_value(value).map_err(|error| CheckError {
                         project: name.clone(),
@@ -673,39 +708,13 @@ impl<'a> Checker<'a> {
         directories: &Directories,
         checked: Vec<Checked<'a>>,
     ) -> Document {
-        let accepted = self.findings.is_empty();
-        // with nothing found, every project was accepted. one that somehow wasn't leaves the
-        // document without projects, which the shared refusal names as a broken contract.
-        let projects = accepted
-            .then(|| {
-                checked
-                    .into_iter()
-                    .map(|project| {
-                        let (_, declared) = project.accepted?;
-                        Some((project.name, declared.into_project(project.directory)))
-                    })
-                    .collect::<Option<BTreeMap<_, _>>>()
-            })
-            .flatten();
-        let remainder = (accepted && focus.is_none()).then(|| {
-            let mut excludes: Vec<RelativePath> = directories.values().flatten().cloned().collect();
-            excludes.sort();
-            Remainder { excludes }
-        });
-        Document {
-            schema: SchemaName,
-            version: Version,
-            focus,
-            projects,
-            remainder,
-            diagnostics: self.findings,
-        }
+        document(self.findings, focus, directories, checked)
     }
 
     fn manifest_entry(&self, name: &str) -> Here<'a> {
         locate(
-            &self.declarations.manifest.value,
-            Here::File(&self.declarations.manifest.file),
+            &self.manifest.value,
+            Here::File(&self.manifest.file),
             &["projects", name],
         )
     }
@@ -1025,6 +1034,145 @@ impl<'a> Checker<'a> {
     }
 }
 
+fn document(
+    findings: Vec<Diagnostic>,
+    focus: Option<Identifier>,
+    directories: &Directories,
+    checked: Vec<Checked<'_>>,
+) -> Document {
+    let accepted = findings.is_empty();
+    // with nothing found, every project was accepted. one that somehow wasn't leaves the document
+    // without projects, which the shared refusal names as a broken contract.
+    let projects = accepted
+        .then(|| {
+            checked
+                .into_iter()
+                .map(|project| {
+                    let (_, declared) = project.accepted?;
+                    Some((project.name, declared.into_project(project.directory)))
+                })
+                .collect::<Option<BTreeMap<_, _>>>()
+        })
+        .flatten();
+    let remainder = (accepted && focus.is_none()).then(|| {
+        let mut excludes: Vec<RelativePath> = directories.values().flatten().cloned().collect();
+        excludes.sort();
+        Remainder { excludes }
+    });
+    Document {
+        schema: SchemaName,
+        version: Version,
+        focus,
+        projects,
+        remainder,
+        diagnostics: findings,
+    }
+}
+
+fn diagnostic(
+    project: Option<Identifier>,
+    path: Vec<Segment>,
+    here: Here<'_>,
+    finding: Finding,
+) -> Diagnostic {
+    Diagnostic {
+        severity: Severity::Error,
+        code: finding.code,
+        project,
+        path,
+        location: here.location(),
+        message: text(finding.message),
+        help: finding.help.map(text),
+        related: finding.related,
+    }
+}
+
+// a failed evaluation of `file`, as the finding its kind calls for: where it goes, the field's path
+// when it names one, and the finding. a failure of the user's sits at the innermost place in their
+// own code the trace passed through, or at the file where the evaluator gives none there, with the
+// rest of their places as notes. a bug in Shikumi is reported at the file as Shikumi's, with its
+// frames for the report, and never shown as the user's.
+fn failure<'f>(file: &'f RelativePath, failure: &'f Failure) -> (Here<'f>, Vec<Segment>, Finding) {
+    let detail = failure.message.as_str();
+    let origin = match &failure.origin {
+        Origin::Shikumi(origin) => {
+            let frames: Vec<String> = origin
+                .frames
+                .iter()
+                .take(INTERNAL_FRAMES)
+                .map(|frame| format!("{}:{}:{}", frame.file, frame.line, frame.column))
+                .collect();
+            let report = finding(
+                Code::ShikumiBug,
+                format!(
+                    "evaluating this file failed inside Shikumi's own Nix, which is a bug in Shikumi, not in this file: {detail}"
+                ),
+            )
+            .help(format!(
+                "report it to Shikumi with this message and the frames it failed in, innermost first: {}",
+                frames.join(", ")
+            ));
+            return (Here::File(file), Vec::new(), report);
+        }
+        Origin::User(origin) => origin,
+    };
+    let mut report = match failure.kind {
+        FailureKind::Syntax => finding(Code::Syntax, format!("this file isn't valid Nix: {detail}")),
+        FailureKind::UndefinedVariable => finding(
+            Code::UndefinedVariable,
+            format!("`{detail}` is used here, but nothing defines it"),
+        )
+        .help(
+            "define it in a `let`, or name it as an argument: a declaration file is called with `shikumi` and `lib`, and the manifest with `types` and `lib`",
+        ),
+        FailureKind::Type => finding(
+            Code::TypeError,
+            format!("evaluation stopped at a value of the wrong type: {detail}"),
+        ),
+        FailureKind::Thrown => finding(Code::Thrown, format!("evaluation threw an error: {detail}")),
+        FailureKind::Assertion => finding(Code::Assertion, "this assertion failed"),
+        FailureKind::InvalidUtf8 => finding(
+            Code::InvalidUtf8,
+            if origin.field.is_some() {
+                "holds text that isn't valid UTF-8, which the registry document can't carry"
+            } else {
+                "this file's declaration holds text that isn't valid UTF-8, which the registry document can't carry"
+            },
+        )
+        .help("cutting text by bytes, as `builtins.substring` does, can split a character in two"),
+        FailureKind::Unrecognized => {
+            finding(Code::Evaluation, format!("evaluation failed: {detail}"))
+        }
+        FailureKind::Crashed => finding(
+            Code::Evaluation,
+            format!("the evaluator stopped without reporting an error: {detail}"),
+        ),
+    };
+    let here = origin
+        .field
+        .as_ref()
+        .and_then(|field| field.at.as_ref())
+        .or(origin.frames.first())
+        .map_or(Here::File(file), Here::At);
+    // where the user's code led to it, outermost last, each place once.
+    let mut shown: Vec<&At> = origin.frames.iter().take(1).collect();
+    for at in origin.frames.iter().skip(1) {
+        if shown.len() > RELATED_FRAMES {
+            break;
+        }
+        if !shown.contains(&at) {
+            shown.push(at);
+            report = report.related(at.location(), "reached from here");
+        }
+    }
+    let path = origin
+        .field
+        .as_ref()
+        .map(|field| field.path.clone())
+        .unwrap_or_default();
+    (here, path, report)
+}
+
 // adds a checked child to what's collected, or drops the collection once any child had a finding.
 // every child is still checked after that, so one pass reports all of them.
 fn keep<T, C: Extend<T>>(collected: &mut Option<C>, child: Option<T>) {
@@ -1309,6 +1457,144 @@ mod tests {
         );
     }
 
+    fn failures() -> Document {
+        checked(
+            &fixture(include_str!("../fixtures/failures/declarations.json")),
+            ROOT,
+        )
+    }
+
+    // the failures fixture is what `shikumi registry declarations` serializes on CppNix 2.35; the
+    // `registry-no-builds-*` checks hold every implementation's classification of it to the same
+    // reference, and `registry-cli` holds the CLI to this document and rendering.
+    #[test]
+    fn each_failed_evaluation_is_its_projects_finding_and_the_others_are_still_checked() {
+        assert_eq!(
+            render_json(&failures()),
+            include_str!("../fixtures/failures/document.json")
+        );
+    }
+
+    #[test]
+    fn the_failures_fixture_renders_at_the_users_lines() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../nix/declarations/tests/fixtures/failures");
+        let rendered = crate::render::render(
+            failures().diagnostics(),
+            &mut crate::render::Sources::new(&fixture),
+        );
+        assert!(
+            rendered == include_str!("../fixtures/failures/findings.txt"),
+            "crates/registry/fixtures/failures/findings.txt differs from the rendering:\n{rendered}"
+        );
+    }
+
+    // a failure of the user's with these frames, or, given frames of Shikumi's, a Shikumi bug.
+    fn failure(kind: FailureKind, frames: Value, internal: Value) -> Value {
+        let origin = if internal == json!([]) {
+            json!({"user": {"frames": frames, "field": null}})
+        } else {
+            json!({"shikumi": {"frames": internal}})
+        };
+        json!({"failure": {"kind": kind.as_str(), "message": "boom", "origin": origin}})
+    }
+
+    fn located(file: &str, line: u32) -> Value {
+        json!({"file": file, "line": line, "column": 3})
+    }
+
+    #[test]
+    fn a_failure_only_inside_shikumis_nix_is_reported_as_shikumis_bug_at_the_projects_file() {
+        let mut declarations = repository(node(sound()), None);
+        declarations.projects.insert(
+            "app".to_owned(),
+            Some(
+                serde_json::from_value(failure(
+                    FailureKind::Type,
+                    json!([]),
+                    json!([located("serialize.nix", 128)]),
+                ))
+                .unwrap(),
+            ),
+        );
+        let document = checked(&declarations, ROOT);
+        let [finding] = document.diagnostics.as_slice() else {
+            panic!("{:?}", document.diagnostics);
+        };
+        assert_eq!(finding.code, Code::ShikumiBug);
+        assert_eq!(finding.location.to_string(), "app/project.nix");
+        assert!(finding.message.as_str().contains("a bug in Shikumi"));
+        assert!(
+            finding
+                .help
+                .as_ref()
+                .unwrap()
+                .as_str()
+                .ends_with("serialize.nix:128:3"),
+            "{finding:?}"
+        );
+    }
+
+    #[test]
+    fn a_users_failure_shows_their_innermost_frame_first_and_the_rest_once_each() {
+        let mut declarations = repository(node(sound()), None);
+        let frames: Vec<Value> = [5, 4, 5, 3, 2, 1, 6, 7, 8, 9, 10, 11]
+            .into_iter()
+            .map(|line| located("app/helpers.nix", line))
+            .collect();
+        declarations.projects.insert(
+            "app".to_owned(),
+            Some(
+                serde_json::from_value(failure(FailureKind::Thrown, json!(frames), json!([])))
+                    .unwrap(),
+            ),
+        );
+        let document = checked(&declarations, ROOT);
+        let [finding] = document.diagnostics.as_slice() else {
+            panic!("{:?}", document.diagnostics);
+        };
+        assert_eq!(finding.code, Code::Thrown);
+        assert_eq!(finding.location.to_string(), "app/helpers.nix:5:3");
+        let related: Vec<String> = finding
+            .related
+            .iter()
+            .map(|related| related.location.to_string())
+            .collect();
+        let lines: Vec<u32> = vec![4, 3, 2, 1, 6, 7, 8, 9];
+        let wanted: Vec<String> = lines
+            .iter()
+            .map(|line| format!("app/helpers.nix:{line}:3"))
+            .collect();
+        assert_eq!(related, wanted);
+    }
+
+    // every project's directory is the manifest's to say, so when the manifest fails nothing else
+    // is read, and the failure is the one finding.
+    #[test]
+    fn a_manifest_that_fails_to_evaluate_is_the_one_finding() {
+        let mut declarations = repository(node(sound()), None);
+        declarations.manifest = serde_json::from_value(failure(
+            FailureKind::Syntax,
+            json!([located("shikumi.nix", 2)]),
+            json!([]),
+        ))
+        .unwrap();
+        declarations.projects.clear();
+        let document = checked(&declarations, ROOT);
+        let found: Vec<_> = document.diagnostics.iter().map(shown).collect();
+        assert_eq!(
+            found,
+            [(
+                Code::Syntax,
+                None,
+                String::new(),
+                "shikumi.nix".to_owned(),
+                Some(2)
+            )]
+        );
+        assert_eq!(document.projects, None);
+    }
+
     #[test]
     fn the_basic_fixture_is_accepted_as_the_tracked_document() {
         let document = checked(
@@ -1368,6 +1654,13 @@ mod tests {
             "projects": {"app": {"factory": true, "value": declaration}}
         }))
         .unwrap()
+    }
+
+    fn manifest_value(declarations: &mut Declarations) -> &mut Node {
+        match &mut declarations.manifest {
+            Evaluated::Value(manifest) => &mut manifest.value,
+            Evaluated::Failed(_) => panic!("the test's manifest evaluated"),
+        }
     }
 
     fn sound() -> Value {
@@ -1471,7 +1764,7 @@ mod tests {
     #[test]
     fn a_manifest_name_that_carries_the_location_or_a_store_path_stays_out_of_the_path() {
         let mut declarations = repository(node(sound()), None);
-        declarations.manifest.value = serde_json::from_value(node(json!({
+        *manifest_value(&mut declarations) = serde_json::from_value(node(json!({
             "projects": {"app": "app"},
             "/repo/x": 1,
             "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x": 2
@@ -1549,7 +1842,7 @@ mod tests {
             "meta": {"count": 3, "ratio": 0.5, "tags": ["a", null, true]}
         }))});
         let mut declarations = repository(declaration, None);
-        declarations.manifest.value = serde_json::from_value(node(json!({
+        *manifest_value(&mut declarations) = serde_json::from_value(node(json!({
             "projects": {"app": "app"},
             "extensions": {"meta": {"_tag": "json"}}
         })))
@@ -1605,7 +1898,7 @@ mod tests {
     #[test]
     fn every_directory_inside_another_is_an_overlap_however_many_share_it() {
         let mut declarations = repository(node(sound()), None);
-        declarations.manifest.value = serde_json::from_value(node(json!({
+        *manifest_value(&mut declarations) = serde_json::from_value(node(json!({
             "projects": {"outer": "a", "first": "a/b", "deeper": "a/b/x", "second": "a/c", "apart": "b"}
         })))
         .unwrap();

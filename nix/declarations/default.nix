@@ -5,7 +5,8 @@
 let
   factory = import ./factory.nix;
   types = import ./vocabulary.nix;
-  serialize = import ./serialize.nix { inherit lib; };
+  forced = import ./forced.nix;
+  serialize = import ./serialize.nix { inherit lib forced; };
 
   shikumi = {
     inherit (factory) project;
@@ -15,7 +16,12 @@ let
   };
 
   compose = import ./compose.nix {
-    inherit lib serialize types;
+    inherit
+      lib
+      serialize
+      types
+      forced
+      ;
     inherit (factory) isProject;
     # a declaration file is a function of these, or a value on its own.
     arguments = { inherit shikumi lib; };

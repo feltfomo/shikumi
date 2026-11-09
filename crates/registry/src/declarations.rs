@@ -1,9 +1,9 @@
 //! the `shikumi.declarations` contract: the manifest and every composed declaration as the
-//! declaration layer serialized them, which is what the checker reads. every value arrives as a
-//! tagged node saying what kind of Nix value it was, and every attribute with the source position
-//! the evaluator gave it, so a value of the wrong kind is something to report rather than
-//! something that failed to parse. what the values mean is the checker's; this module only reads
-//! the shape.
+//! declaration layer serialized them, or why evaluating one failed, which is what the checker
+//! reads. every value arrives as a tagged node saying what kind of Nix value it was, and every
+//! attribute with the source position the evaluator gave it, so a value of the wrong kind is
+//! something to report rather than something that failed to parse. what the values mean is the
+//! checker's; this module only reads the shape.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -11,8 +11,10 @@ use std::num::NonZeroU32;
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 
-use crate::contract::{RelativePath, contract_name, contract_version, require_every_property};
-use crate::document::{Location, Position};
+use crate::contract::{
+    RelativePath, closed_set, contract_name, contract_version, require_every_property,
+};
+use crate::document::{Location, Position, Segment};
 
 contract_name!(DeclarationsName, "shikumi.declarations");
 
@@ -34,16 +36,132 @@ pub struct Declarations {
     /// the project the composition was asked to focus on, as given, or null for the global one.
     #[serde(deserialize_with = "Option::deserialize")]
     pub focus: Option<String>,
-    pub manifest: Manifest,
+    pub manifest: Evaluated<Manifest>,
     /// every composed project by its manifest name; null where the manifest's entry names no
     /// declaration file.
-    pub projects: BTreeMap<String, Option<Declaration>>,
+    pub projects: BTreeMap<String, Option<Evaluated<Declaration>>>,
 }
 
 impl Declarations {
+    pub fn new(
+        focus: Option<String>,
+        manifest: Evaluated<Manifest>,
+        projects: BTreeMap<String, Option<Evaluated<Declaration>>>,
+    ) -> Self {
+        Self {
+            schema: DeclarationsName,
+            version: DeclarationsVersion,
+            focus,
+            manifest,
+            projects,
+        }
+    }
+
     pub fn from_json(bytes: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(bytes)
     }
+}
+
+/// a value the layer serialized, or the failure that stopped its evaluation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Evaluated<T> {
+    Value(T),
+    Failed(Failed),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Failed {
+    pub failure: Failure,
+}
+
+/// why evaluating a declaration or the manifest stopped, as Shikumi read it from the evaluator's
+/// error: what kind of failure it was, and which of the trace's frames lie in the repository's
+/// files and which in Shikumi's own Nix. frames anywhere else, such as in nixpkgs' `lib`, are
+/// neither the user's nor Shikumi's to fix, and are left out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = require_every_property)]
+pub struct Failure {
+    pub kind: FailureKind,
+    /// what the evaluator said, with the repository's location taken out of it. for a thrown
+    /// error, it's the text that was thrown; for an undefined variable, the variable's name.
+    pub message: String,
+    pub origin: Origin,
+}
+
+impl Failure {
+    /// the field the failure names, for one of the user's.
+    pub fn field(&self) -> Option<&FieldAt> {
+        match &self.origin {
+            Origin::User(origin) => origin.field.as_ref(),
+            Origin::Shikumi(_) => None,
+        }
+    }
+}
+
+/// whose the failure is to fix.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Origin {
+    User(UserOrigin),
+    Shikumi(ShikumiOrigin),
+}
+
+/// a failure that passed through the repository's files, or one in a value the user wrote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = require_every_property)]
+pub struct UserOrigin {
+    /// the frames in the repository's files, innermost first: where the failure happened in the
+    /// user's code, then what led there. empty where the evaluator gives no position there.
+    pub frames: Vec<At>,
+    /// the field holding text that isn't valid UTF-8, where the evaluator could be made to say.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub field: Option<FieldAt>,
+}
+
+/// a bug in Shikumi, whose Nix never fails on user input.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ShikumiOrigin {
+    /// the frames in Shikumi's own Nix, innermost first, for the report.
+    pub frames: Vec<InternalFrame>,
+}
+
+closed_set! {
+    /// what stopped an evaluation, as far as Shikumi can tell from the evaluator's error.
+    FailureKind {
+        Syntax = "syntax": "a file that isn't valid Nix",
+        UndefinedVariable = "undefined-variable": "a variable nothing defines",
+        Type = "type": "an operation on a value of the wrong type, such as calling something that isn't a function",
+        Thrown = "thrown": "a `throw` or `abort` evaluation reached",
+        Assertion = "assertion": "an `assert` whose condition was false",
+        InvalidUtf8 = "invalid-utf8": "text that isn't valid UTF-8, which the registry document can't carry",
+        Unrecognized = "unrecognized": "a failure Shikumi doesn't recognize, with the evaluator's own message",
+        Crashed = "crashed": "an evaluator that stopped without reporting an error, as one that was killed does",
+    }
+}
+
+/// a field's path inside a declaration and the nearest source position on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = require_every_property)]
+pub struct FieldAt {
+    pub path: Vec<Segment>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub at: Option<At>,
+}
+
+/// a frame in Shikumi's own Nix: a file of the declaration layer, relative to the layer, and the
+/// position in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InternalFrame {
+    pub file: String,
+    pub line: NonZeroU32,
+    pub column: NonZeroU32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -183,6 +301,7 @@ mod tests {
         for tracked in [
             include_str!("../fixtures/basic/declarations.json"),
             include_str!("../fixtures/broken/declarations.json"),
+            include_str!("../fixtures/failures/declarations.json"),
         ] {
             let read = Declarations::from_json(tracked.as_bytes()).unwrap();
             assert_eq!(render_json(&read), tracked);

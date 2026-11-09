@@ -1,0 +1,6 @@
+# Nix with a missing semicolon. it isn't named `.nix`, so the repository's formatter and linter,
+# which can't parse it, leave it alone.
+{
+  summary = "A missing semicolon"
+  maintainers = [ "someone" ];
+}

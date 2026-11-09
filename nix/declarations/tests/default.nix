@@ -15,17 +15,33 @@ let
   shikumi = import ../. { inherit lib; };
   inherit (shikumi) types;
 
-  compose =
-    root: focus:
-    (shikumi.compose {
-      inherit root focus;
+  composition =
+    root:
+    shikumi.compose {
+      inherit root;
       manifest = root + "/shikumi.nix";
-    }).document;
+    };
 
-  basic = compose ./fixtures/basic null;
-  broken = compose ./fixtures/broken null;
+  # the manifest and every listed project's entry, as the producer assembles a global composition.
+  compose =
+    root:
+    let
+      composed = composition root;
+    in
+    {
+      inherit (composed) manifest;
+      projects = builtins.mapAttrs (
+        _: file: if file == null then null else composed.read file
+      ) composed.files;
+    };
 
-  serialize = import ../serialize.nix { inherit lib; };
+  basic = compose ./fixtures/basic;
+  broken = compose ./fixtures/broken;
+
+  serialize = import ../serialize.nix {
+    inherit lib;
+    forced = import ../forced.nix;
+  };
   # serialization relative to this directory, so positions name files beside this one.
   serialized = (serialize (toString ./.)).value;
 
@@ -268,7 +284,7 @@ in
   testCompositionReadsOnlyWhatItCanReadWithoutFailing = {
     expr =
       let
-        inherit (compose ./fixtures/odd null) projects;
+        inherit (compose ./fixtures/odd) projects;
       in
       {
         inherit (projects) dir;
@@ -354,27 +370,48 @@ in
     expected = builtins.fromJSON (builtins.readFile vocabulary);
   };
 
-  testTheDocumentIsTheDeclarationsContractAndNothingElse = {
-    expr = {
-      fields = builtins.attrNames basic;
-      inherit (basic) schema version focus;
-      manifest = basic.manifest.file;
-    };
+  testCompositionGivesTheManifestEachFileAndEachProjectApart = {
+    expr =
+      let
+        composed = composition ./fixtures/basic;
+      in
+      {
+        fields = builtins.attrNames composed;
+        manifest = composed.manifest.file;
+        inherit (composed) files;
+      };
     expected = {
       fields = [
-        "focus"
+        "files"
         "manifest"
-        "projects"
-        "schema"
-        "version"
+        "read"
       ];
-      schema = "shikumi.declarations";
-      version = {
-        major = 1;
-        minor = 0;
-      };
-      focus = null;
       manifest = "shikumi.nix";
+      files = {
+        core = "libs/core/project.nix";
+        docs = "docs/project.nix";
+        web = "apps/web/project.nix";
+      };
+    };
+  };
+
+  # the producer reads the manifest once and then each project on its own, so naming the files
+  # reads no declaration, and reading one project reads no other.
+  testNamingTheFilesReadsNoDeclaration = {
+    expr =
+      let
+        composed = composition ./fixtures/lazy;
+      in
+      {
+        files = builtins.attrNames composed.files;
+        leaf = builtins.deepSeq (composed.read composed.files.leaf) true;
+      };
+    expected = {
+      files = [
+        "leaf"
+        "unrelated"
+      ];
+      leaf = true;
     };
   };
 
@@ -427,42 +464,22 @@ in
     ];
   };
 
-  testFocusedCompositionHoldsWhatTheProjectDependsOn = {
+  # a project read from the file its selection named gives the entry composition gives, without
+  # the manifest: here, one that throws as soon as it's imported.
+  testReadingAProjectFromItsFileNeedsNoManifest = {
     expr =
       let
-        focused = compose ./fixtures/basic "docs";
+        composed = shikumi.compose {
+          root = ./fixtures/basic;
+          manifest = throw "the manifest was read";
+        };
       in
-      {
-        projects = builtins.attrNames focused.projects;
-        inherit (focused) focus;
-      };
-    expected = {
-      projects = [
-        "core"
-        "docs"
-        "web"
-      ];
-      focus = "docs";
-    };
-  };
-
-  testFocusedCompositionLeavesOutWhatNothingNames = {
-    expr = builtins.attrNames (compose ./fixtures/basic "core").projects;
-    expected = [ "core" ];
-  };
-
-  testFocusedCompositionReadsNoOtherDeclaration = {
-    expr = builtins.attrNames (compose ./fixtures/lazy "leaf").projects;
-    expected = [ "leaf" ];
-  };
-
-  testAFocusOnAnUnlistedProjectComposesNothing = {
-    expr = (compose ./fixtures/basic "nowhere").projects;
-    expected = { };
+      composed.read "libs/core/project.nix" == basic.projects.core;
+    expected = true;
   };
 
   testGlobalCompositionSurfacesADeclarationsOwnError = {
-    expr = builtins.deepSeq (compose ./fixtures/lazy null) true;
+    expr = builtins.deepSeq (compose ./fixtures/lazy) true;
     expectedError = {
       type = "ThrownError";
       msg = "the unrelated declaration was read";

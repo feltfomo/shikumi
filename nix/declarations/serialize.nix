@@ -17,7 +17,11 @@
 # exponential to walk, so a top-level field that holds more than `budget` values, or nests deeper
 # than `maxDepth`, becomes one `too-large` node instead of being walked, carrying both limits so
 # the checker's finding states them from here.
-{ lib }:
+#
+# every value is first forced through `forced` as it's counted, so a failure in a value the user
+# wrote reads as the user's even where the evaluator gives it no position, and one in this file's
+# own code, outside that frame, reads as Shikumi's.
+{ lib, forced }:
 let
   inherit (builtins)
     attrValues
@@ -36,14 +40,15 @@ let
 
   # a derivation, or anything else with an `outPath`, stands for a store path. it isn't entered:
   # its attributes are the package's, not the declaration's.
-  isOpaque = value: value ? outPath || value.type or null == "derivation";
+  isOpaque = value: value ? outPath || forced (value.type or null) == "derivation";
 
   # how many values `value` holds, counting itself, or more than `limit` once there are more. the
   # count stops as soon as it passes the limit, so it costs at most `limit` visits whatever the
   # value's size, and nesting past `maxDepth` counts as past the limit.
   size =
-    depth: limit: value:
+    depth: limit: written:
     let
+      value = forced written;
       over = limit + 1;
       children =
         if isList value then
@@ -162,5 +167,10 @@ in
   inherit relative;
   # a declaration or manifest: each top-level field is counted on its own, so a field too large to
   # walk is reported at that field and the rest are still read.
-  value = value: if isAttrs value && !isOpaque value then fields bounded value else bounded value;
+  value =
+    written:
+    let
+      value = forced written;
+    in
+    if isAttrs value && !isOpaque value then fields bounded value else bounded value;
 }

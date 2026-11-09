@@ -134,6 +134,8 @@ fn snippet(
 /// counted in bytes from 1, where the attribute path that defined the field starts, so a field set
 /// as `steps.build.exec` has the position of `steps`. the innermost name of the finding's path that
 /// appears in that attribute path is underlined; failing that, the attribute path's first name.
+/// where no name starts at the column, as at the token a syntax error stopped on, the one
+/// character there is.
 fn underline<'s>(source: &'s str, column: usize, names: &[&str]) -> Option<(usize, &'s str)> {
     let start = column.checked_sub(1)?;
     let rest = source.get(start..)?;
@@ -152,7 +154,11 @@ fn underline<'s>(source: &'s str, column: usize, names: &[&str]) -> Option<(usiz
         .find_map(|name| segments.iter().find(|(_, segment)| segment == name))
         .or_else(|| segments.first())
         .copied()?;
-    (!segment.is_empty()).then_some((at, segment))
+    if segment.is_empty() {
+        let character = rest.chars().next()?;
+        return Some((start, &rest[..character.len_utf8()]));
+    }
+    Some((at, segment))
 }
 
 #[cfg(test)]

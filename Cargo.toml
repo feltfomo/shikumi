@@ -24,6 +24,8 @@ tempfile = "3.27"
 unicode-width = "0.2"
 # one runtime per process, as the core will run; only the parts the store transport uses.
 tokio = { version = "1.54", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync"] }
+# the data-parallel pool: CPU-bound work across every core the process may use, on the global pool.
+rayon = "1.11"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

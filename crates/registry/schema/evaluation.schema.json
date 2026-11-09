@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shikumi.evaluation",
+  "description": "one evaluation's answer.",
+  "type": "object",
+  "properties": {
+    "answer": {
+      "$ref": "#/$defs/Answer"
+    },
+    "schema": {
+      "$ref": "#/$defs/EvaluationName"
+    },
+    "version": {
+      "$ref": "#/$defs/EvaluationVersion"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "answer"
+  ],
+  "$defs": {
+    "Answer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "plan"
+          ]
+        },
+        {
+          "description": "each asked project's declaration, in the order asked.",
+          "type": "object",
+          "properties": {
+            "projects": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Declaration"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "projects"
+          ]
+        }
+      ]
+    },
+    "At": {
+      "description": "an attribute's source position.",
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "file": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "column"
+      ]
+    },
+    "Declaration": {
+      "type": "object",
+      "properties": {
+        "factory": {
+          "description": "whether the file returned a `shikumi.project` result; when it didn't, `value` is what it\nreturned instead.",
+          "type": "boolean"
+        },
+        "value": {
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "factory",
+        "value"
+      ]
+    },
+    "EvaluationName": {
+      "const": "shikumi.evaluation"
+    },
+    "EvaluationVersion": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ]
+    },
+    "Field": {
+      "description": "an attribute's value and where it was defined, or null where the evaluator gives no position\ninside the repository.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "value"
+      ]
+    },
+    "Manifest": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "value": {
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "value"
+      ]
+    },
+    "Node": {
+      "description": "one Nix value, tagged with what kind of value it was.",
+      "oneOf": [
+        {
+          "description": "a string's text, and whether it carried a store reference the text may not show.",
+          "type": "object",
+          "properties": {
+            "context": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "const": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value",
+            "context"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "int"
+            },
+            "value": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "float"
+            },
+            "value": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "null"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "a path value, relative to the repository root, or null when it lies outside it.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "path"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Node"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "list"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "items"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "fields": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Field"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "attrs"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fields"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "function"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "a derivation or anything else with an `outPath`, which stands for a store path.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "derivation"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "infinity or NaN, which JSON can't write.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "non-finite"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "a value with more values in it, or deeper nesting, than serialization walks, as one that\nrefers to itself has, with the limits the serializer held it to.",
+          "type": "object",
+          "properties": {
+            "depth": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "too-large"
+            },
+            "values": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "values",
+            "depth"
+          ]
+        }
+      ]
+    },
+    "Plan": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "description": "every listed project's declaration file, relative to the root, or null where the\nmanifest's entry names none.",
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RelativePath"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "manifest": {
+          "$ref": "#/$defs/Manifest"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "manifest"
+      ]
+    },
+    "RelativePath": {
+      "description": "a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part",
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$"
+    }
+  }
+}

@@ -2,30 +2,82 @@
 //! `nix-instantiate`, reading the declarations it serializes, checking them, and handing the
 //! document to the shared refusal.
 //!
-//! the evaluation can't build or read a build's output through the evaluator. it runs against
-//! `dummy://`, a store that holds nothing and accepts nothing, so every derivation output it would
-//! import, read, hash or test for is missing on every host, whatever the host's store holds.
-//! import-from-derivation is off as well, which is the same refusal stated as the setting the three
-//! implementations share. the settings that would hand a declaration another way to run or build
-//! something, `builtins.exec`, plugins and experimental builtins, are pinned off on the command
-//! line, which outranks every configuration file and `NIX_CONFIG`.
+//! each project's declaration is evaluated on its own terms, so a failure in one comes back as that
+//! project's finding and every other project is still checked in the same run. one evaluation plans
+//! the composition: it reads the manifest and names each listed project's declaration file, and
+//! reads no declaration. the projects are then evaluated in batches, as many at once as the process
+//! has cores, and each batch's answer is read on Rayon's pool as it arrives. a batch that fails
+//! names the project it failed in, by the frame `produce.nix` puts around each one; that project
+//! gets the failure, and the projects before and after it are evaluated again without it. the
+//! evaluator is pure and a failed evaluation leaves nothing behind, so a project comes out exactly
+//! as it would evaluated alone. a focused composition is evaluated the same way, in rounds: the
+//! focused project, then the listed projects its serialized `dependsOn` names, and so on, so its
+//! projects come out as the global composition gives them.
+//!
+//! cost grows linearly with the projects, since a batch reads its declaration files without the
+//! manifest and holds at most `BATCH_PROJECTS`. a failure a frame places in its project costs at
+//! most one batch and two evaluator starts of about twenty milliseconds: a project that evaluated is
+//! evaluated at most twice, once in the batch that failed after it, once in the batch of those
+//! before the failure. a failure no frame places, such as a crash, halves its batch down to its
+//! project, so it costs about two batches and thirteen starts, and a project beside it is evaluated
+//! up to seven times. a focused composition takes one round per level of its dependencies.
+//!
+//! every evaluation is built by `command`, so none of them can reach a build or read a build's
+//! output through the evaluator. each runs against `dummy://`, a store that holds nothing and
+//! accepts nothing, so every derivation output it would import, read, hash or test for is missing on
+//! every host, whatever the host's store holds. import-from-derivation is off as well, which is the
+//! same refusal stated as the setting the three implementations share. the settings that would hand
+//! a declaration another way to run or build something, `builtins.exec`, plugins and experimental
+//! builtins, are pinned off on the command line, which outranks every configuration file and
+//! `NIX_CONFIG`. so are the settings that shape the error a failure is read from.
 //!
 //! the child gets no environment at all, so `builtins.getEnv` reads nothing and a caller's `PWD`,
 //! `TMPDIR` or `NIX_PATH` can't make the document depend on where it was produced. a path read
 //! straight from the filesystem, with no store context, is out of reach of all of this.
+//!
+//! the evaluator processes belong to the run that started them. each is started and waited for by
+//! one of the run's scoped threads, which end before the run returns, so every child is reaped
+//! before `declarations` returns, on success and on failure alike. after an error no new batch
+//! starts and the batches already running finish. Ctrl-C reaches the evaluators directly, since they
+//! share the terminal's process group. a `shikumi` killed any other way leaves its running
+//! evaluators to finish their batch, at most `BATCH_PROJECTS` declarations, and exit, or, for a
+//! declaration that never terminates, to run until they're killed too. tying each
+//! child to its parent's death would take a hook run between fork and exec, which makes the
+//! standard library fork the whole process rather than spawn the child: measured at 10000
+//! projects, that cost 2.4 s of CPU and 0.6 s of wall time per run.
 
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
 use std::io;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Condvar, Mutex, PoisonError};
 
 use crate::check;
-use crate::declarations::Declarations;
+use crate::declarations::{
+    Declaration, Declarations, Evaluated, Failed, Failure, FailureKind, Node,
+};
 use crate::document::{Document, Identifier, Registry, RegistryError};
+use crate::evaluation::{Answer, Evaluation, Project, Request};
+use crate::failure::{Classified, Places, classify};
 
 /// the manifest's file name at the repository root.
 pub const MANIFEST: &str = "shikumi.nix";
+
+/// how many batches each core gets, so a batch of slow declarations doesn't leave the other cores
+/// idle at the end of the run.
+const BATCHES_PER_CORE: usize = 4;
+
+/// the most projects one batch holds. a failure evaluates again the projects its batch evaluated
+/// before it, so this bounds what each failure costs whatever the repository's size; a batch this
+/// size costs a few times what starting its evaluator does.
+const BATCH_PROJECTS: usize = 64;
+
+/// the most bytes of project names one batch's request carries. a command-line argument can't be
+/// longer than 128 KiB on Linux.
+const REQUEST_BYTES: usize = 64 * 1024;
 
 /// where the producer finds what it evaluates with: the host's `nix-instantiate`, Shikumi's own
 /// declaration layer and the nixpkgs source tree whose `lib` the layer runs on.
@@ -84,8 +136,8 @@ impl Producer {
         check::check(&declarations, &utf8(&root)?).map_err(ProduceError::Check)
     }
 
-    /// the declarations as the declaration layer serialized them, and the canonical root they
-    /// were evaluated from.
+    /// the declarations as the declaration layer serialized them, each failure in its place, and
+    /// the canonical root they were evaluated from.
     pub fn declarations(
         &self,
         root: &Path,
@@ -98,30 +150,28 @@ impl Producer {
         if !root.join(MANIFEST).is_file() {
             return Err(ProduceError::NoManifest(root));
         }
-        let output = self
-            .command(&root, focus)?
-            .output()
-            .map_err(|error| ProduceError::Spawn {
-                program: self.nix_instantiate.clone(),
-                error,
-            })?;
-        if !output.status.success() {
-            return Err(ProduceError::Evaluation {
-                status: output.status.to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr)
-                    .trim_end()
-                    .to_owned(),
-            });
-        }
-        let declarations =
-            Declarations::from_json(&output.stdout).map_err(ProduceError::Declarations)?;
+        let root_text = utf8(&root)?;
+        // as the evaluator prints them, which is with every symlink resolved.
+        let canonical =
+            |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+        let evaluator = Evaluator {
+            producer: self,
+            root: &root,
+            places: Places {
+                root: &root_text,
+                layer: &utf8(&canonical(&self.layer))?,
+                nixpkgs: &utf8(&canonical(&self.nixpkgs))?,
+            },
+        };
+        let parallelism = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
+        let declarations = compose(&evaluator, focus.map(Identifier::as_str), parallelism)?;
         Ok((declarations, root))
     }
 
     // TODO: evaluate in pure mode from the context cache's store copy of exactly the keyed files,
     // once the context cache exists. until then a declaration can read a store path whose context
     // it stripped, an untracked file, `.git` or the clock, and the document can depend on them.
-    fn command(&self, root: &Path, focus: Option<&Identifier>) -> Result<Command, ProduceError> {
+    fn command(&self, root: &Path, request: &Request<'_>) -> Result<Command, ProduceError> {
         let mut command = Command::new(&self.nix_instantiate);
         command
             .args(["--eval", "--strict", "--json"])
@@ -135,17 +185,399 @@ impl Producer {
             ])
             .args(["--option", "plugin-files", ""])
             .args(["--option", "experimental-features", ""])
+            // every frame, in the plain format the failure is read from, whatever the host's
+            // configuration asks for.
+            .args(["--show-trace", "--log-format", "raw"])
             .arg(self.layer.join("produce.nix"))
             .args(["--argstr", "nixpkgs"])
             .arg(utf8(&self.nixpkgs)?)
             .args(["--argstr", "root"])
-            .arg(utf8(root)?);
-        if let Some(focus) = focus {
-            command.args(["--argstr", "focus", focus.as_str()]);
-        }
+            .arg(utf8(root)?)
+            .args(["--argstr", "request"])
+            .arg(request.to_json());
         command.env_clear().current_dir("/");
         Ok(command)
     }
+}
+
+/// what one evaluation printed: its answer, or the error it failed with.
+#[derive(Debug)]
+enum Printed {
+    Answer(Vec<u8>),
+    Error(String),
+}
+
+/// one evaluation of the declaration layer. the producer's evaluator runs `nix-instantiate`; the
+/// tests' stands in for it.
+trait Evaluate: Sync {
+    fn evaluate(&self, request: &Request<'_>) -> Result<Printed, ProduceError>;
+    fn places(&self) -> Places<'_>;
+}
+
+struct Evaluator<'p> {
+    producer: &'p Producer,
+    root: &'p Path,
+    places: Places<'p>,
+}
+
+impl Evaluate for Evaluator<'_> {
+    fn evaluate(&self, request: &Request<'_>) -> Result<Printed, ProduceError> {
+        let output = self
+            .producer
+            .command(self.root, request)?
+            .output()
+            .map_err(|error| ProduceError::Spawn {
+                program: self.producer.nix_instantiate.clone(),
+                error,
+            })?;
+        Ok(if output.status.success() {
+            Printed::Answer(output.stdout)
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // a signal leaves nothing on stderr to say so; the status does.
+            Printed::Error(if stderr.trim().is_empty() {
+                format!("the evaluator exited with {}", output.status)
+            } else {
+                stderr.into_owned()
+            })
+        })
+    }
+
+    fn places(&self) -> Places<'_> {
+        self.places
+    }
+}
+
+fn answer(printed: &[u8]) -> Result<Answer, ProduceError> {
+    Evaluation::from_json(printed)
+        .map(|evaluation| evaluation.answer)
+        .map_err(ProduceError::Answer)
+}
+
+/// plans the composition, evaluates every selected project, and assembles the declarations.
+fn compose(
+    evaluator: &impl Evaluate,
+    focus: Option<&str>,
+    parallelism: usize,
+) -> Result<Declarations, ProduceError> {
+    let plan = match evaluator.evaluate(&Request::Plan {})? {
+        Printed::Answer(printed) => match answer(&printed)? {
+            Answer::Plan(plan) => plan,
+            Answer::Projects(_) => return Err(ProduceError::Unanswered(Asked::Plan)),
+        },
+        // the plan reads no declaration, so its failure is the manifest's, and with no manifest
+        // there's nothing to compose.
+        Printed::Error(stderr) => {
+            let Classified { failure, .. } = classify(&stderr, evaluator.places());
+            return Ok(Declarations::new(
+                focus.map(str::to_owned),
+                Evaluated::Failed(Failed { failure }),
+                BTreeMap::new(),
+            ));
+        }
+    };
+
+    let mut projects: BTreeMap<String, Entry> = BTreeMap::new();
+    let mut next: BTreeSet<&str> = match focus {
+        None => plan.files.keys().map(String::as_str).collect(),
+        Some(focus) => plan
+            .files
+            .get_key_value(focus)
+            .map(|(name, _)| name.as_str())
+            .into_iter()
+            .collect(),
+    };
+    while !next.is_empty() {
+        let mut pending = Vec::new();
+        for name in next {
+            match &plan.files[name] {
+                Some(file) => pending.push(Project {
+                    name: name.to_owned(),
+                    file: file.clone(),
+                }),
+                None => {
+                    projects.insert(name.to_owned(), None);
+                }
+            }
+        }
+        let evaluated = evaluate(evaluator, batches(pending, parallelism), parallelism)?;
+        // only the projects this round evaluated can name a project not yet composed.
+        next = BTreeSet::new();
+        if focus.is_some() {
+            for (_, entry) in &evaluated {
+                next.extend(
+                    dependencies(entry)
+                        .filter_map(|name| plan.files.get_key_value(name))
+                        .map(|(name, _)| name.as_str()),
+                );
+            }
+        }
+        projects.extend(evaluated);
+        next.retain(|name| !projects.contains_key(*name));
+    }
+    Ok(Declarations::new(
+        focus.map(str::to_owned),
+        Evaluated::Value(plan.manifest),
+        projects,
+    ))
+}
+
+/// the projects a declaration names in `project.dependsOn`, as it serialized them: each string of
+/// a list there. a declaration that failed, or one in any other shape, names none, and the checker
+/// reports the shape.
+fn dependencies(entry: &Entry) -> impl Iterator<Item = &str> {
+    fn field<'n>(node: &'n Node, name: &str) -> Option<&'n Node> {
+        match node {
+            Node::Attrs { fields } => fields.get(name).map(|field| &field.value),
+            _ => None,
+        }
+    }
+    let items = match entry {
+        Some(Evaluated::Value(declaration)) if declaration.factory => {
+            field(&declaration.value, "project")
+                .and_then(|project| field(project, "dependsOn"))
+                .and_then(|depends| match depends {
+                    Node::List { items } => Some(items.as_slice()),
+                    _ => None,
+                })
+        }
+        _ => None,
+    };
+    items
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| match item {
+            Node::String { value, .. } => Some(value.as_str()),
+            _ => None,
+        })
+}
+
+/// the projects in contiguous batches: at least `BATCHES_PER_CORE` for each core, none of more than
+/// `BATCH_PROJECTS`, and none whose request is longer than `REQUEST_BYTES`.
+fn batches(projects: Vec<Project>, parallelism: usize) -> Vec<Vec<Project>> {
+    let size = projects
+        .len()
+        .div_ceil(parallelism.max(1) * BATCHES_PER_CORE)
+        .clamp(1, BATCH_PROJECTS);
+    let mut batches = Vec::new();
+    let mut batch: Vec<Project> = Vec::new();
+    let mut bytes = 0;
+    for project in projects {
+        // the project as JSON: its keys and quotes, and room for every character to be escaped.
+        let length = (project.name.len() + project.file.as_str().len()) * 2 + 24;
+        if !batch.is_empty() && (batch.len() == size || bytes + length > REQUEST_BYTES) {
+            batches.push(std::mem::take(&mut batch));
+            bytes = 0;
+        }
+        bytes += length;
+        batch.push(project);
+    }
+    if !batch.is_empty() {
+        batches.push(batch);
+    }
+    batches
+}
+
+/// what one project came to.
+type Entry = Option<Evaluated<Declaration>>;
+
+/// the work the evaluating threads share: the batches still to evaluate, how many are being
+/// evaluated, what came back, and the first error, after which no batch starts.
+struct Shared {
+    queue: VecDeque<Vec<Project>>,
+    running: usize,
+    entries: Vec<(String, Entry)>,
+    error: Option<ProduceError>,
+}
+
+/// evaluates every batch, at most `parallelism` at a time, and returns every project's entry.
+fn evaluate(
+    evaluator: &impl Evaluate,
+    batches: Vec<Vec<Project>>,
+    parallelism: usize,
+) -> Result<Vec<(String, Entry)>, ProduceError> {
+    let workers = parallelism.min(batches.len());
+    let shared = Mutex::new(Shared {
+        queue: batches.into(),
+        running: 0,
+        entries: Vec::new(),
+        error: None,
+    });
+    let changed = Condvar::new();
+    // answers are read on Rayon's pool while the threads go on to the next batch; the scope waits
+    // for every read before it returns.
+    rayon::in_place_scope(|reads| {
+        std::thread::scope(|threads| {
+            for _ in 0..workers {
+                threads.spawn(|| work(evaluator, &shared, &changed, reads));
+            }
+        });
+    });
+    let shared = recovered(shared.into_inner());
+    match shared.error {
+        Some(error) => Err(error),
+        None => Ok(shared.entries),
+    }
+}
+
+// the shared state stays sound when a thread panics holding it: every change to it is one
+// statement, and a panic is reported when the scope rejoins the thread anyway.
+fn recovered<T>(result: Result<T, PoisonError<T>>) -> T {
+    result.unwrap_or_else(PoisonError::into_inner)
+}
+
+fn work<'s>(
+    evaluator: &'s impl Evaluate,
+    shared: &'s Mutex<Shared>,
+    changed: &'s Condvar,
+    reads: &rayon::Scope<'s>,
+) {
+    let lock = || recovered(shared.lock());
+    loop {
+        let batch = {
+            let mut state = lock();
+            loop {
+                if state.error.is_some() {
+                    return;
+                }
+                if let Some(batch) = state.queue.pop_front() {
+                    state.running += 1;
+                    break batch;
+                }
+                // an evaluation still running may yet hand back the projects around a failure.
+                if state.running == 0 {
+                    return;
+                }
+                state = recovered(changed.wait(state));
+            }
+        };
+        let outcome = run_batch(evaluator, batch);
+        let mut state = lock();
+        state.running -= 1;
+        match outcome {
+            Ok(Ran::Answered(names, printed)) => reads.spawn(move |_| {
+                let read = read_batch(names, &printed);
+                let mut state = lock();
+                match read {
+                    Ok(entries) => state.entries.extend(entries),
+                    Err(error) => {
+                        state.error.get_or_insert(error);
+                    }
+                }
+                drop(state);
+                changed.notify_all();
+            }),
+            Ok(Ran::Failed {
+                project,
+                failure,
+                again,
+            }) => {
+                state
+                    .entries
+                    .push((project, Some(Evaluated::Failed(Failed { failure }))));
+                state.queue.extend(again);
+            }
+            Ok(Ran::Split(halves)) => state.queue.extend(halves),
+            Err(error) => {
+                state.error.get_or_insert(error);
+            }
+        }
+        drop(state);
+        changed.notify_all();
+    }
+}
+
+/// what evaluating one batch came to: its answer, still to be read, or the project it failed in
+/// and the batches left to evaluate without it.
+enum Ran {
+    Answered(Vec<Project>, Vec<u8>),
+    Failed {
+        project: String,
+        failure: Failure,
+        again: Vec<Vec<Project>>,
+    },
+    /// a failure no frame placed: the batch, halved, to evaluate again.
+    Split(Vec<Vec<Project>>),
+}
+
+fn run_batch(evaluator: &impl Evaluate, batch: Vec<Project>) -> Result<Ran, ProduceError> {
+    let stderr = match evaluator.evaluate(&Request::Evaluate(&batch))? {
+        Printed::Answer(printed) => return Ok(Ran::Answered(batch, printed)),
+        Printed::Error(stderr) => stderr,
+    };
+    let Classified { project, failure } = classify(&stderr, evaluator.places());
+    let at = project
+        .as_ref()
+        .and_then(|name| batch.iter().position(|project| project.name == *name));
+    let Some(at) = at else {
+        // a failure no frame places in one project: halve the batch until it's down to the one
+        // project it fails with.
+        if batch.len() > 1 {
+            let mut first = batch;
+            let second = first.split_off(first.len() / 2);
+            return Ok(Ran::Split(vec![first, second]));
+        }
+        let project = batch.into_iter().next().expect("a batch is never empty");
+        return Ok(Ran::Failed {
+            project: project.name,
+            failure,
+            again: Vec::new(),
+        });
+    };
+    let mut before = batch;
+    let mut after = before.split_off(at);
+    let project = after.remove(0);
+    let failure = located(evaluator, &project, failure)?;
+    Ok(Ran::Failed {
+        project: project.name,
+        failure,
+        again: [before, after]
+            .into_iter()
+            .filter(|batch| !batch.is_empty())
+            .collect(),
+    })
+}
+
+/// a failure on text that isn't UTF-8 names no field; evaluating the project once more with every
+/// string written out under a frame that names its field says which one it is.
+fn located(
+    evaluator: &impl Evaluate,
+    project: &Project,
+    failure: Failure,
+) -> Result<Failure, ProduceError> {
+    if failure.kind != FailureKind::InvalidUtf8 || failure.field().is_some() {
+        return Ok(failure);
+    }
+    Ok(match evaluator.evaluate(&Request::Locate(project))? {
+        Printed::Error(stderr) => {
+            let read = classify(&stderr, evaluator.places());
+            if read.project.as_deref() == Some(project.name.as_str())
+                && read.failure.field().is_some()
+            {
+                read.failure
+            } else {
+                failure
+            }
+        }
+        Printed::Answer(_) => failure,
+    })
+}
+
+fn read_batch(
+    projects: Vec<Project>,
+    printed: &[u8],
+) -> Result<Vec<(String, Entry)>, ProduceError> {
+    let Answer::Projects(declarations) = answer(printed)? else {
+        return Err(ProduceError::Unanswered(Asked::Evaluate));
+    };
+    if declarations.len() != projects.len() {
+        return Err(ProduceError::Unanswered(Asked::Evaluate));
+    }
+    Ok(projects
+        .into_iter()
+        .zip(declarations)
+        .map(|(project, declaration)| (project.name, Some(Evaluated::Value(declaration))))
+        .collect())
 }
 
 fn utf8(path: &Path) -> Result<String, ProduceError> {
@@ -158,6 +590,22 @@ fn find_program(name: &str, path: &OsString) -> Option<PathBuf> {
     std::env::split_paths(path)
         .map(|directory| directory.join(name))
         .find(|candidate| candidate.is_file())
+}
+
+/// what a request the layer didn't answer asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Asked {
+    Plan,
+    Evaluate,
+}
+
+impl fmt::Display for Asked {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Plan => "plan",
+            Self::Evaluate => "evaluate",
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -174,13 +622,11 @@ pub enum ProduceError {
         program: PathBuf,
         error: io::Error,
     },
-    Evaluation {
-        status: String,
-        stderr: String,
-    },
-    /// the layer printed something that isn't the serialized declarations: a Shikumi bug, since
-    /// the layer writes nothing else.
-    Declarations(serde_json::Error),
+    /// the layer printed something that isn't an evaluation answer: a Shikumi bug, since the layer
+    /// writes nothing else.
+    Answer(serde_json::Error),
+    /// the layer answered a request with something other than what it asked for: a Shikumi bug.
+    Unanswered(Asked),
     Check(check::CheckError),
     Document(RegistryError),
 }
@@ -199,15 +645,13 @@ impl fmt::Display for ProduceError {
             Self::NoManifest(root) => write!(f, "{} has no {MANIFEST} manifest", root.display()),
             Self::NotUtf8(path) => write!(f, "{} isn't valid UTF-8", path.display()),
             Self::Spawn { program, error } => write!(f, "running {}: {error}", program.display()),
-            Self::Evaluation { status, stderr } => {
-                write!(
-                    f,
-                    "evaluating the declarations failed ({status}):\n{stderr}"
-                )
-            }
-            Self::Declarations(error) => write!(
+            Self::Answer(error) => write!(
                 f,
-                "the declaration layer's output isn't the serialized declarations, which is a Shikumi bug: {error}"
+                "the declaration layer's output isn't an evaluation answer, which is a Shikumi bug: {error}"
+            ),
+            Self::Unanswered(request) => write!(
+                f,
+                "the declaration layer answered a {request} request with something else, which is a Shikumi bug"
             ),
             Self::Check(error) => error.fmt(f),
             Self::Document(error) => error.fmt(f),
@@ -220,8 +664,10 @@ impl std::error::Error for ProduceError {}
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+    use crate::contract::RelativePath;
 
     fn producer() -> Producer {
         Producer::new(
@@ -231,9 +677,31 @@ mod tests {
         )
     }
 
+    fn project(name: &str) -> Project {
+        Project {
+            name: name.to_owned(),
+            file: RelativePath::new(format!("{name}/project.nix")).unwrap(),
+        }
+    }
+
+    fn projects(names: &[String]) -> Vec<Project> {
+        names.iter().map(|name| project(name)).collect()
+    }
+
+    fn user_frames(failure: &Failure) -> &[crate::declarations::At] {
+        match &failure.origin {
+            crate::declarations::Origin::User(origin) => &origin.frames,
+            crate::declarations::Origin::Shikumi(_) => panic!("{failure:?}"),
+        }
+    }
+
+    fn plan() -> Request<'static> {
+        Request::Plan {}
+    }
+
     #[test]
     fn evaluation_can_reach_no_store_and_nothing_that_builds_or_runs() {
-        let command = producer().command(Path::new("/repo"), None).unwrap();
+        let command = producer().command(Path::new("/repo"), &plan()).unwrap();
         let args: Vec<&OsStr> = command.get_args().collect();
         let has = |pair: [&str; 2]| args.windows(2).any(|w| w[0] == pair[0] && w[1] == pair[1]);
         assert!(has(["--store", "dummy://"]), "{args:?}");
@@ -246,31 +714,33 @@ mod tests {
             let pinned = args.windows(3).any(|w| w == ["--option", setting, value]);
             assert!(pinned, "{setting} isn't pinned to {value:?}: {args:?}");
         }
+        assert!(has(["--log-format", "raw"]), "{args:?}");
+        assert!(args.contains(&OsStr::new("--show-trace")), "{args:?}");
+    }
+
+    #[test]
+    fn every_request_runs_with_the_same_refusals() {
+        let names = [project("a")];
+        let pinned = |request: &Request<'_>| {
+            let command = producer().command(Path::new("/repo"), request).unwrap();
+            let args: Vec<String> = command
+                .get_args()
+                .map(|a| a.to_str().unwrap().to_owned())
+                .collect();
+            let request_at = args.iter().position(|a| a == "request").unwrap();
+            args[..request_at].to_vec()
+        };
+        let planned = pinned(&plan());
+        assert_eq!(pinned(&Request::Evaluate(&names)), planned);
+        assert_eq!(pinned(&Request::Locate(&names[0])), planned);
     }
 
     #[test]
     fn the_child_gets_no_environment() {
-        let command = producer().command(Path::new("/repo"), None).unwrap();
+        let command = producer().command(Path::new("/repo"), &plan()).unwrap();
         let passed: Vec<_> = command.get_envs().collect();
         assert!(passed.is_empty(), "{passed:?} reached the evaluator");
         assert_eq!(command.get_current_dir(), Some(Path::new("/")));
-    }
-
-    #[test]
-    fn a_focus_is_passed_only_when_given() {
-        let focus = Identifier::new("web").unwrap();
-        let focused = producer()
-            .command(Path::new("/repo"), Some(&focus))
-            .unwrap();
-        let global = producer().command(Path::new("/repo"), None).unwrap();
-        let args = |command: &Command| -> Vec<String> {
-            command
-                .get_args()
-                .map(|a| a.to_str().unwrap().to_owned())
-                .collect()
-        };
-        assert!(args(&focused).ends_with(&["--argstr".into(), "focus".into(), "web".into()]));
-        assert!(!args(&global).iter().any(|a| a == "focus"));
     }
 
     #[test]
@@ -280,5 +750,512 @@ mod tests {
             Err(ProduceError::NoManifest(_)) => {}
             other => panic!("expected the missing manifest, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn batches_cover_every_name_in_order_four_to_a_core() {
+        let names: Vec<String> = (0..100).map(|i| format!("p{i:03}")).collect();
+        let split = batches(projects(&names), 4);
+        assert_eq!(split.len(), 15);
+        assert!(split.iter().all(|batch| batch.len() <= 7));
+        assert_eq!(split.concat(), projects(&names));
+        assert_eq!(batches(Vec::new(), 4), Vec::<Vec<Project>>::new());
+    }
+
+    // a failure evaluates its batch's earlier projects again, so a repository's size mustn't grow
+    // what one failure costs.
+    #[test]
+    fn no_batch_holds_more_projects_than_a_failure_should_cost() {
+        let names: Vec<String> = (0..10_000).map(|i| format!("p{i:05}")).collect();
+        let split = batches(projects(&names), 2);
+        assert!(split.iter().all(|batch| batch.len() <= BATCH_PROJECTS));
+        assert_eq!(split.len(), 10_000usize.div_ceil(BATCH_PROJECTS));
+        assert_eq!(split.concat(), projects(&names));
+    }
+
+    #[test]
+    fn no_batch_asks_for_more_than_an_argument_can_hold() {
+        let names: Vec<String> = (0..64).map(|i| format!("{i:0>4000}")).collect();
+        let split = batches(projects(&names), 1);
+        for batch in &split {
+            let request = Request::Evaluate(batch).to_json();
+            assert!(request.len() <= REQUEST_BYTES, "{}", request.len());
+        }
+        assert_eq!(split.concat(), projects(&names));
+    }
+
+    /// how a project of the scripted repository evaluates.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    enum Behaves {
+        Evaluates,
+        /// fails, with a frame that names the project.
+        Throws,
+        /// fails with no frame that names it, as a crash would.
+        Crashes,
+        /// fails only as its text is written out, naming its field when asked to locate it.
+        InvalidUtf8,
+    }
+
+    /// a repository the producer's evaluator stands in for: what each project does, what it
+    /// depends on, and every evaluation the producer asked for.
+    struct Scripted {
+        projects: BTreeMap<String, (Behaves, Vec<String>)>,
+        manifest_fails: bool,
+        garbage: bool,
+        /// a project whose evaluation can't even be started.
+        unrunnable: Option<&'static str>,
+        /// how long each evaluation takes, so a test can see evaluations overlap.
+        takes: std::time::Duration,
+        running: AtomicUsize,
+        most_running: AtomicUsize,
+        requests: Mutex<Vec<String>>,
+    }
+
+    impl Scripted {
+        fn new(projects: &[(&str, Behaves, &[&str])]) -> Self {
+            Self {
+                projects: projects
+                    .iter()
+                    .map(|(name, behaves, depends)| {
+                        let depends = depends.iter().map(|d| (*d).to_owned()).collect();
+                        ((*name).to_owned(), (*behaves, depends))
+                    })
+                    .collect(),
+                manifest_fails: false,
+                garbage: false,
+                unrunnable: None,
+                takes: std::time::Duration::ZERO,
+                running: AtomicUsize::new(0),
+                most_running: AtomicUsize::new(0),
+                requests: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn behaves(&self, name: &str) -> Behaves {
+            self.projects[name].0
+        }
+
+        fn answer(answer: serde_json::Value) -> Printed {
+            Printed::Answer(
+                serde_json::json!({
+                    "schema": "shikumi.evaluation",
+                    "version": {"major": 1, "minor": 0},
+                    "answer": answer
+                })
+                .to_string()
+                .into_bytes(),
+            )
+        }
+
+        // an error as every implementation prints it under `--show-trace`.
+        fn error(project: Option<&str>, frames: &[String], message: &str) -> Printed {
+            let mut text = String::from("error:\n");
+            if let Some(project) = project {
+                text.push_str(&format!("       … shikumi-project {project:?}\n\n"));
+            }
+            for frame in frames {
+                text.push_str(&format!("       … {frame}\n\n"));
+            }
+            text.push_str(&format!("       error: {message}\n"));
+            Printed::Error(text)
+        }
+
+        fn thrown(name: &str) -> Printed {
+            Self::error(
+                Some(name),
+                &[format!(
+                    "while calling the 'throw' builtin\n         at /repo/{name}/project.nix:3:5:"
+                )],
+                &format!("{name} threw"),
+            )
+        }
+
+        fn utf8(name: &str, field: bool) -> Printed {
+            let mut frames = Vec::new();
+            if field {
+                frames.push(format!(
+                    r#"shikumi-field {{"path":["project","summary"],"at":{{"file":"{name}/project.nix","line":4,"column":5}}}}"#
+                ));
+            }
+            frames.push(
+                "while calling the 'toJSON' builtin\n         at /layer/produce.nix:50:7:"
+                    .to_owned(),
+            );
+            Self::error(
+                Some(name),
+                &frames,
+                "JSON serialization error: [json.exception.type_error.316] invalid UTF-8 byte at index 0: 0xC3",
+            )
+        }
+
+        // a declaration whose `project.dependsOn` lists what the script says it depends on.
+        fn declaration(&self, name: &str) -> serde_json::Value {
+            let depends: Vec<_> = self.projects[name]
+                .1
+                .iter()
+                .map(|d| serde_json::json!({"kind": "string", "value": d, "context": false}))
+                .collect();
+            serde_json::json!({"factory": true, "value": {"kind": "attrs", "fields": {
+                "project": {"at": null, "value": {"kind": "attrs", "fields": {
+                    "dependsOn": {"at": null, "value": {"kind": "list", "items": depends}}
+                }}}
+            }}})
+        }
+
+        fn respond(&self, request: &Request<'_>) -> Printed {
+            if self.garbage {
+                return Printed::Answer(b"{}".to_vec());
+            }
+            match request {
+                Request::Plan {} => {
+                    if self.manifest_fails {
+                        return Self::error(
+                            None,
+                            &["from call site\n         at /repo/shikumi.nix:2:3:".to_owned()],
+                            "the manifest failed",
+                        );
+                    }
+                    let files: BTreeMap<&String, String> = self
+                        .projects
+                        .keys()
+                        .map(|name| (name, format!("{name}/project.nix")))
+                        .collect();
+                    Self::answer(serde_json::json!({"plan": {
+                        "manifest": {"file": "shikumi.nix", "value": {"kind": "null"}},
+                        "files": files
+                    }}))
+                }
+                Request::Evaluate(names) => {
+                    for name in names.iter().map(|project| project.name.as_str()) {
+                        match self.behaves(name) {
+                            Behaves::Evaluates => {}
+                            Behaves::Throws => return Self::thrown(name),
+                            Behaves::Crashes => return Printed::Error(String::new()),
+                            Behaves::InvalidUtf8 => return Self::utf8(name, false),
+                        }
+                    }
+                    let declarations: Vec<_> = names
+                        .iter()
+                        .map(|project| self.declaration(&project.name))
+                        .collect();
+                    Self::answer(serde_json::json!({ "projects": declarations }))
+                }
+                Request::Locate(project) => match self.behaves(&project.name) {
+                    Behaves::InvalidUtf8 => Self::utf8(&project.name, true),
+                    _ => Self::answer(
+                        serde_json::json!({"projects": [self.declaration(&project.name)]}),
+                    ),
+                },
+            }
+        }
+    }
+
+    impl Evaluate for Scripted {
+        fn evaluate(&self, request: &Request<'_>) -> Result<Printed, ProduceError> {
+            let running = self.running.fetch_add(1, Ordering::SeqCst) + 1;
+            self.most_running.fetch_max(running, Ordering::SeqCst);
+            self.requests.lock().unwrap().push(label(request));
+            if let (Some(name), Request::Evaluate(names)) = (self.unrunnable, request)
+                && names.iter().any(|project| project.name == name)
+            {
+                self.running.fetch_sub(1, Ordering::SeqCst);
+                return Err(ProduceError::NoEvaluator);
+            }
+            std::thread::sleep(self.takes);
+            let printed = self.respond(request);
+            self.running.fetch_sub(1, Ordering::SeqCst);
+            Ok(printed)
+        }
+
+        fn places(&self) -> Places<'_> {
+            Places {
+                root: "/repo",
+                layer: "/layer",
+                nixpkgs: "/nixpkgs",
+            }
+        }
+    }
+
+    // a request as the tests list it: a plan as its JSON, and the projects the others name.
+    fn label(request: &Request<'_>) -> String {
+        match request {
+            Request::Plan { .. } => request.to_json(),
+            Request::Evaluate(projects) => {
+                let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
+                format!("evaluate {}", names.join(","))
+            }
+            Request::Locate(project) => format!("locate {}", project.name),
+        }
+    }
+
+    fn entries(declarations: &Declarations) -> BTreeMap<String, String> {
+        declarations
+            .projects
+            .iter()
+            .map(|(name, entry)| (name.clone(), serde_json::to_string(entry).unwrap()))
+            .collect()
+    }
+
+    // each project evaluated alone, in a batch of its own.
+    fn alone(scripted: &Scripted) -> BTreeMap<String, String> {
+        let names: Vec<String> = scripted.projects.keys().cloned().collect();
+        let each: Vec<Vec<Project>> = names.iter().map(|name| vec![project(name)]).collect();
+        evaluate(scripted, each, 1)
+            .unwrap()
+            .into_iter()
+            .map(|(name, entry)| (name, serde_json::to_string(&entry).unwrap()))
+            .collect()
+    }
+
+    // a small deterministic generator, so every run of the test tries the same repositories.
+    fn behaviours(seed: u64, count: usize) -> Vec<Behaves> {
+        let mut state = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (0..count)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                match (state >> 33) % 10 {
+                    0 | 1 => Behaves::Throws,
+                    2 => Behaves::Crashes,
+                    3 => Behaves::InvalidUtf8,
+                    _ => Behaves::Evaluates,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn batched_evaluation_gives_what_each_project_gives_alone() {
+        for seed in 0..40 {
+            let kinds = behaviours(seed, 23);
+            let names: Vec<String> = (0..kinds.len()).map(|i| format!("p{i:02}")).collect();
+            let projects: Vec<(&str, Behaves, &[&str])> = names
+                .iter()
+                .zip(&kinds)
+                .map(|(name, kind)| (name.as_str(), *kind, &[][..]))
+                .collect();
+            let scripted = Scripted::new(&projects);
+            let expected = alone(&scripted);
+            for parallelism in [1, 2, 3, 16] {
+                let declarations = compose(&scripted, None, parallelism).unwrap();
+                assert_eq!(
+                    entries(&declarations),
+                    expected,
+                    "seed {seed}, {parallelism} at once, {kinds:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_project_is_its_own_failure_and_its_batch_runs_again_without_it() {
+        let scripted = Scripted::new(&[
+            ("a", Behaves::Evaluates, &[]),
+            ("b", Behaves::Throws, &[]),
+            ("c", Behaves::Evaluates, &[]),
+        ]);
+        let batch = vec![project("a"), project("b"), project("c")];
+        let entries: BTreeMap<String, Entry> = evaluate(&scripted, vec![batch], 1)
+            .unwrap()
+            .into_iter()
+            .collect();
+        let Some(Some(Evaluated::Failed(failed))) = entries.get("b") else {
+            panic!("{entries:?}");
+        };
+        assert_eq!(failed.failure.kind, FailureKind::Thrown);
+        assert_eq!(
+            user_frames(&failed.failure)[0].file.as_str(),
+            "b/project.nix"
+        );
+        for name in ["a", "c"] {
+            assert!(
+                matches!(entries.get(name), Some(Some(Evaluated::Value(_)))),
+                "{name}"
+            );
+        }
+        let requests = scripted.requests.lock().unwrap().clone();
+        assert_eq!(requests, ["evaluate a,b,c", "evaluate a", "evaluate c",]);
+    }
+
+    #[test]
+    fn a_failure_no_frame_places_is_halved_down_to_its_project() {
+        let scripted = Scripted::new(&[
+            ("a", Behaves::Evaluates, &[]),
+            ("b", Behaves::Evaluates, &[]),
+            ("c", Behaves::Crashes, &[]),
+            ("d", Behaves::Evaluates, &[]),
+        ]);
+        let declarations = compose(&scripted, None, 1).unwrap();
+        let Some(Some(Evaluated::Failed(failed))) = declarations.projects.get("c") else {
+            panic!("{:?}", declarations.projects);
+        };
+        assert_eq!(failed.failure.kind, FailureKind::Crashed);
+        assert_eq!(
+            declarations
+                .projects
+                .values()
+                .filter(|entry| matches!(entry, Some(Evaluated::Value(_))))
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn text_that_isnt_utf8_is_located_to_its_field() {
+        let scripted = Scripted::new(&[("a", Behaves::InvalidUtf8, &[])]);
+        let declarations = compose(&scripted, None, 1).unwrap();
+        let Some(Some(Evaluated::Failed(failed))) = declarations.projects.get("a") else {
+            panic!("{:?}", declarations.projects);
+        };
+        assert_eq!(failed.failure.kind, FailureKind::InvalidUtf8);
+        let field = failed.failure.field().unwrap();
+        assert_eq!(field.at.as_ref().unwrap().file.as_str(), "a/project.nix");
+    }
+
+    // in the old single evaluation, a dependency whose declaration couldn't be read took the
+    // whole focused composition down with it, the focused project included.
+    #[test]
+    fn a_focused_composition_keeps_its_project_when_a_dependency_fails() {
+        let scripted = Scripted::new(&[
+            ("app", Behaves::Evaluates, &["lib", "tool"]),
+            ("lib", Behaves::Throws, &["base"]),
+            ("tool", Behaves::Crashes, &[]),
+            ("base", Behaves::Evaluates, &[]),
+            ("other", Behaves::Throws, &[]),
+        ]);
+        let declarations = compose(&scripted, Some("app"), 2).unwrap();
+        let names: Vec<&str> = declarations.projects.keys().map(String::as_str).collect();
+        assert_eq!(names, ["app", "lib", "tool"]);
+        assert!(matches!(
+            declarations.projects["app"],
+            Some(Evaluated::Value(_))
+        ));
+        for failed in ["lib", "tool"] {
+            assert!(
+                matches!(declarations.projects[failed], Some(Evaluated::Failed(_))),
+                "{failed}"
+            );
+        }
+        let requests = scripted.requests.lock().unwrap().clone();
+        assert!(
+            !requests.iter().any(|request| request.contains("other")),
+            "{requests:?}"
+        );
+    }
+
+    // a focused composition evaluates its projects as the global one does, so each comes out the
+    // same, failures included.
+    #[test]
+    fn a_focused_composition_gives_each_project_what_the_global_one_gives() {
+        let scripted = Scripted::new(&[
+            ("app", Behaves::Evaluates, &["lib", "data", "nowhere"]),
+            ("lib", Behaves::Throws, &["base"]),
+            ("data", Behaves::InvalidUtf8, &[]),
+            ("base", Behaves::Evaluates, &[]),
+            ("web", Behaves::Evaluates, &["app"]),
+        ]);
+        let global = entries(&compose(&scripted, None, 3).unwrap());
+        for (focus, selected) in [
+            ("web", &["app", "data", "lib", "web"][..]),
+            ("app", &["app", "data", "lib"]),
+            ("base", &["base"]),
+            ("data", &["data"]),
+        ] {
+            let focused = entries(&compose(&scripted, Some(focus), 3).unwrap());
+            let names: Vec<&str> = focused.keys().map(String::as_str).collect();
+            assert_eq!(names, selected, "{focus}");
+            for (name, entry) in &focused {
+                assert_eq!(entry, &global[name], "{name} focused on {focus}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_focus_on_an_unlisted_project_composes_nothing() {
+        let scripted = Scripted::new(&[("app", Behaves::Evaluates, &[])]);
+        let declarations = compose(&scripted, Some("nowhere"), 2).unwrap();
+        assert!(declarations.projects.is_empty());
+        assert_eq!(scripted.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_manifest_that_fails_leaves_nothing_to_compose() {
+        let mut scripted = Scripted::new(&[("a", Behaves::Evaluates, &[])]);
+        scripted.manifest_fails = true;
+        let declarations = compose(&scripted, None, 4).unwrap();
+        let Evaluated::Failed(failed) = &declarations.manifest else {
+            panic!("{:?}", declarations.manifest);
+        };
+        assert_eq!(failed.failure.message, "the manifest failed");
+        assert_eq!(user_frames(&failed.failure)[0].file.as_str(), "shikumi.nix");
+        assert!(declarations.projects.is_empty());
+        assert_eq!(scripted.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn no_more_evaluations_run_at_once_than_the_cores_allowed() {
+        let names: Vec<String> = (0..64).map(|i| format!("p{i:02}")).collect();
+        let projects: Vec<(&str, Behaves, &[&str])> = names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let kind = if i % 7 == 0 {
+                    Behaves::Throws
+                } else {
+                    Behaves::Evaluates
+                };
+                (name.as_str(), kind, &[][..])
+            })
+            .collect();
+        // long enough for evaluations to overlap when they can.
+        let overlapping = || {
+            let mut scripted = Scripted::new(&projects);
+            scripted.takes = std::time::Duration::from_millis(1);
+            scripted
+        };
+        for parallelism in [1, 3] {
+            let scripted = overlapping();
+            compose(&scripted, None, parallelism).unwrap();
+            let most = scripted.most_running.load(Ordering::SeqCst);
+            assert!(
+                most <= parallelism,
+                "{most} ran at once, {parallelism} allowed"
+            );
+        }
+        let scripted = overlapping();
+        compose(&scripted, None, 3).unwrap();
+        assert!(scripted.most_running.load(Ordering::SeqCst) > 1);
+    }
+
+    #[test]
+    fn an_answer_outside_the_contract_stops_the_run_with_its_error() {
+        let mut scripted = Scripted::new(&[("a", Behaves::Evaluates, &[])]);
+        scripted.garbage = true;
+        assert!(matches!(
+            compose(&scripted, None, 4),
+            Err(ProduceError::Answer(_))
+        ));
+    }
+
+    #[test]
+    fn after_an_evaluation_fails_to_run_no_other_batch_starts() {
+        let names: Vec<String> = (0..12).map(|i| format!("p{i:02}")).collect();
+        let projects: Vec<(&str, Behaves, &[&str])> = names
+            .iter()
+            .map(|name| (name.as_str(), Behaves::Evaluates, &[][..]))
+            .collect();
+        let mut scripted = Scripted::new(&projects);
+        scripted.unrunnable = Some("p03");
+        let each: Vec<Vec<Project>> = names.iter().map(|name| vec![project(name)]).collect();
+        assert!(matches!(
+            evaluate(&scripted, each, 1),
+            Err(ProduceError::NoEvaluator)
+        ));
+        let requests = scripted.requests.lock().unwrap().clone();
+        assert_eq!(requests.last().unwrap(), "evaluate p03");
+        assert_eq!(requests.len(), 4);
     }
 }

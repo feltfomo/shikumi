@@ -1,32 +1,36 @@
-# composition: reads the manifest, imports the declaration of every project the composition holds,
-# and serializes both into the `shikumi.declarations` document the checker reads. nothing here
-# decides whether a declaration is right; the checker, in Rust, owns that, and every value reaches it
-# as it was written. what this file does decide is which files to read, so it guards only that: a
-# manifest entry that doesn't name exactly one file inside the repository is read as having none.
+# composition: reads the manifest, names each listed project's declaration file, and serializes the
+# manifest and each project's declaration for the checker. nothing here decides whether a
+# declaration is right; the checker, in Rust, owns that, and every value reaches it as it was
+# written. what this file does decide is which files to read, so it guards only that: a manifest
+# entry that doesn't name exactly one file inside the repository is read as having none.
+#
+# each project's declaration is a value of its own, so whoever evaluates them can evaluate each one
+# apart and keep a failure to the project that caused it. every value a user wrote is first forced
+# through `forced`, so a failure in it reads as the user's. which projects a composition holds is
+# the caller's to choose, from `files` and what each declaration's `dependsOn` serializes to.
 #
 # cost grows linearly with the projects composed: one import and one serialization per declaration.
-# a focused composition imports only the focused project and the projects its `dependsOn` names,
-# transitively; every other declaration stays unread.
+# `read` takes a declaration file `files` named and reads the manifest no more, so evaluating some
+# projects apart costs the same however many the manifest lists.
 {
   lib,
   serialize,
   isProject,
+  forced,
   # what a project's declaration file is called with.
   arguments,
   types,
 }:
 let
   inherit (builtins)
-    filter
     functionArgs
-    genericClosure
     hasContext
     intersectAttrs
     isAttrs
     isFunction
-    isList
     isString
     pathExists
+    seq
     ;
 
   # the declaration file every listed directory holds.
@@ -36,20 +40,20 @@ let
   # a function that requires an argument nobody gives it stays a function, which the checker
   # reports, rather than failing evaluation for every other declaration too.
   call =
-    available: value:
+    available: imported:
     let
+      value = forced imported;
       named = functionArgs value;
       unmet = lib.filterAttrs (name: optional: !optional && !(available ? ${name})) named;
     in
     if !isFunction value || unmet != { } then
       value
     else
-      value (if named == { } then available else intersectAttrs named available);
+      forced (value (if named == { } then available else intersectAttrs named available));
 in
 {
   root,
   manifest,
-  focus ? null,
 }:
 let
   rootString = toString root;
@@ -58,18 +62,18 @@ let
   manifestValue = call { inherit types lib; } (import manifest);
 
   listed =
-    if isAttrs manifestValue && isAttrs (manifestValue.projects or null) then
+    if isAttrs manifestValue && isAttrs (forced (manifestValue.projects or null)) then
       manifestValue.projects
     else
       { };
 
-  # the file a directory names. path addition normalizes `.`, `..`, doubled and trailing slashes,
-  # so a directory written any other way than plainly names a different file than it says, and none
-  # is read; the checker reports the entry itself. a directory where the file belongs isn't read
-  # either, since importing it would read its `default.nix`.
+  # the file a directory names. path addition normalizes `.`, `..`, doubled and trailing
+  # slashes, so a directory written any other way than plainly names a different file than it
+  # says, and none is read; the checker reports the entry itself. a directory where the file
+  # belongs isn't read either, since importing it would read its `default.nix`.
   fileOf =
     directory:
-    if isString directory && !hasContext directory then
+    if isString (forced directory) && !hasContext directory then
       let
         file = root + "/${directory}/${declarationName}";
       in
@@ -84,66 +88,34 @@ let
     else
       null;
 
-  # read lazily, so a focused composition reads only the declarations it composes.
-  declarations = builtins.mapAttrs (
+  # one project's serialized declaration, read from its file.
+  read =
+    file:
+    let
+      declaration = call arguments (import (root + "/${file}"));
+      # the mark is the user's value; reading it is the factory's.
+      factory = seq (forced (declaration._type or null)) (isProject declaration);
+    in
+    {
+      inherit factory;
+      value = serialized.value (if factory then declaration.declaration else declaration);
+    };
+in
+{
+  inherit read;
+
+  manifest = {
+    file = serialized.relative (toString manifest);
+    value = serialized.value manifestValue;
+  };
+
+  # each listed project's declaration file, relative to the root, or null where its entry names
+  # none.
+  files = builtins.mapAttrs (
     _: directory:
     let
       file = fileOf directory;
     in
-    if file == null then null else call arguments (import file)
+    if file == null then null else serialized.relative (toString file)
   ) listed;
-
-  # which projects a declaration depends on, for selecting a focused composition only. a value that
-  # isn't a list of listed names selects nothing more; the checker reports it. `or` also answers a
-  # selection through something that isn't an attribute set, on every implementation.
-  dependenciesOf =
-    name:
-    let
-      declaration = declarations.${name};
-      dependsOn = declaration.declaration.project.dependsOn or [ ];
-    in
-    if isProject declaration && isList dependsOn then
-      filter (dependency: isString dependency && listed ? ${dependency}) dependsOn
-    else
-      [ ];
-
-  selected =
-    if focus == null then
-      builtins.attrNames listed
-    else if listed ? ${focus} then
-      map (item: item.key) (genericClosure {
-        startSet = [ { key = focus; } ];
-        operator = item: map (key: { inherit key; }) (dependenciesOf item.key);
-      })
-    else
-      [ ];
-in
-{
-  document = {
-    schema = "shikumi.declarations";
-    version = {
-      major = 1;
-      minor = 0;
-    };
-    inherit focus;
-    manifest = {
-      file = serialized.relative (toString manifest);
-      value = serialized.value manifestValue;
-    };
-    # null where the manifest's entry names no declaration file.
-    projects = lib.genAttrs selected (
-      name:
-      let
-        declaration = declarations.${name};
-        factory = isProject declaration;
-      in
-      if declaration == null then
-        null
-      else
-        {
-          inherit factory;
-          value = serialized.value (if factory then declaration.declaration else declaration);
-        }
-    );
-  };
 }

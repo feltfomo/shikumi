@@ -7,6 +7,8 @@ pub mod check;
 mod contract;
 pub mod declarations;
 pub mod document;
+pub mod evaluation;
+mod failure;
 mod graph;
 pub mod produce;
 pub mod reference;

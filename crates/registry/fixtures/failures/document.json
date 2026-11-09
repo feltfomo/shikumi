@@ -1,0 +1,218 @@
+{
+  "schema": "shikumi.registry",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "focus": null,
+  "projects": null,
+  "remainder": null,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "assertion",
+      "project": "assertion",
+      "path": [],
+      "location": {
+        "file": "projects/assertion/project.nix",
+        "position": {
+          "line": 5,
+          "column": 1
+        }
+      },
+      "message": "this assertion failed",
+      "help": null,
+      "related": [
+        {
+          "location": {
+            "file": "projects/assertion/project.nix",
+            "position": {
+              "line": 1,
+              "column": 1
+            }
+          },
+          "message": "reached from here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "type-error",
+      "project": "call-type",
+      "path": [],
+      "location": {
+        "file": "projects/call-type/project.nix",
+        "position": {
+          "line": 7,
+          "column": 15
+        }
+      },
+      "message": "evaluation stopped at a value of the wrong type: attempt to call something which is not a function but a string: \"service\"",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "type-error",
+      "project": "coerce",
+      "path": [],
+      "location": {
+        "file": "projects/coerce/project.nix",
+        "position": {
+          "line": 6,
+          "column": 28
+        }
+      },
+      "message": "evaluation stopped at a value of the wrong type: cannot coerce a function to a string: «lambda project @ «shikumi»/factory.nix:6:13»",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "thrown",
+      "project": "library",
+      "path": [],
+      "location": {
+        "file": "projects/library/project.nix",
+        "position": null
+      },
+      "message": "evaluation threw an error: toInt: Could not convert \"someone\" to int.",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "missing",
+      "project": "missing-summary",
+      "path": [
+        "project",
+        "summary"
+      ],
+      "location": {
+        "file": "projects/missing-summary/project.nix",
+        "position": {
+          "line": 3,
+          "column": 3
+        }
+      },
+      "message": "is required but not defined",
+      "help": "add `summary = ...;`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "syntax",
+      "project": "syntax",
+      "path": [],
+      "location": {
+        "file": "projects/syntax/settings.nixpart",
+        "position": {
+          "line": 5,
+          "column": 15
+        }
+      },
+      "message": "this file isn't valid Nix: syntax error, unexpected '=', expecting ';'",
+      "help": null,
+      "related": [
+        {
+          "location": {
+            "file": "projects/syntax/project.nix",
+            "position": {
+              "line": 3,
+              "column": 13
+            }
+          },
+          "message": "reached from here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "thrown",
+      "project": "thrown",
+      "path": [],
+      "location": {
+        "file": "projects/thrown/helpers.nix",
+        "position": {
+          "line": 2,
+          "column": 49
+        }
+      },
+      "message": "evaluation threw an error: summary is required",
+      "help": null,
+      "related": [
+        {
+          "location": {
+            "file": "projects/thrown/helpers.nix",
+            "position": {
+              "line": 2,
+              "column": 20
+            }
+          },
+          "message": "reached from here"
+        },
+        {
+          "location": {
+            "file": "projects/thrown/project.nix",
+            "position": {
+              "line": 7,
+              "column": 15
+            }
+          },
+          "message": "reached from here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "undefined-variable",
+      "project": "undefined",
+      "path": [],
+      "location": {
+        "file": "projects/undefined/project.nix",
+        "position": {
+          "line": 4,
+          "column": 15
+        }
+      },
+      "message": "`sumary` is used here, but nothing defines it",
+      "help": "define it in a `let`, or name it as an argument: a declaration file is called with `shikumi` and `lib`, and the manifest with `types` and `lib`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "thrown",
+      "project": "uneven",
+      "path": [],
+      "location": {
+        "file": "projects/uneven/project.nix",
+        "position": {
+          "line": 10,
+          "column": 13
+        }
+      },
+      "message": "evaluation threw an error: uneven fails here first",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid-utf8",
+      "project": "utf8",
+      "path": [
+        "project",
+        "summary"
+      ],
+      "location": {
+        "file": "projects/utf8/project.nix",
+        "position": {
+          "line": 5,
+          "column": 5
+        }
+      },
+      "message": "holds text that isn't valid UTF-8, which the registry document can't carry",
+      "help": "cutting text by bytes, as `builtins.substring` does, can split a character in two",
+      "related": []
+    }
+  ]
+}

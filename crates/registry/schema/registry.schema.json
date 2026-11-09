@@ -78,7 +78,15 @@
         "duplicate",
         "no-declaration",
         "not-a-declaration",
-        "overlap"
+        "overlap",
+        "syntax",
+        "undefined-variable",
+        "type-error",
+        "thrown",
+        "assertion",
+        "invalid-utf8",
+        "evaluation",
+        "shikumi-bug"
       ]
     },
     "Command": {

@@ -12,7 +12,7 @@
       ]
     },
     "manifest": {
-      "$ref": "#/$defs/Manifest"
+      "$ref": "#/$defs/Evaluated"
     },
     "projects": {
       "description": "every composed project by its manifest name; null where the manifest's entry names no\ndeclaration file.",
@@ -20,7 +20,7 @@
       "additionalProperties": {
         "anyOf": [
           {
-            "$ref": "#/$defs/Declaration"
+            "$ref": "#/$defs/Evaluated2"
           },
           {
             "type": "null"
@@ -105,6 +105,76 @@
         "minor"
       ]
     },
+    "Evaluated": {
+      "description": "a value the layer serialized, or the failure that stopped its evaluation.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Manifest"
+        },
+        {
+          "$ref": "#/$defs/Failed"
+        }
+      ]
+    },
+    "Evaluated2": {
+      "description": "a value the layer serialized, or the failure that stopped its evaluation.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Declaration"
+        },
+        {
+          "$ref": "#/$defs/Failed"
+        }
+      ]
+    },
+    "Failed": {
+      "type": "object",
+      "properties": {
+        "failure": {
+          "$ref": "#/$defs/Failure"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "failure"
+      ]
+    },
+    "Failure": {
+      "description": "why evaluating a declaration or the manifest stopped, as Shikumi read it from the evaluator's\nerror: what kind of failure it was, and which of the trace's frames lie in the repository's\nfiles and which in Shikumi's own Nix. frames anywhere else, such as in nixpkgs' `lib`, are\nneither the user's nor Shikumi's to fix, and are left out.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/FailureKind"
+        },
+        "message": {
+          "description": "what the evaluator said, with the repository's location taken out of it. for a thrown\nerror, it's the text that was thrown; for an undefined variable, the variable's name.",
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "message",
+        "origin"
+      ]
+    },
+    "FailureKind": {
+      "description": "what stopped an evaluation, as far as Shikumi can tell from the evaluator's error.",
+      "type": "string",
+      "enum": [
+        "syntax",
+        "undefined-variable",
+        "type",
+        "thrown",
+        "assertion",
+        "invalid-utf8",
+        "unrecognized",
+        "crashed"
+      ]
+    },
     "Field": {
       "description": "an attribute's value and where it was defined, or null where the evaluator gives no position\ninside the repository.",
       "type": "object",
@@ -127,6 +197,58 @@
       "required": [
         "at",
         "value"
+      ]
+    },
+    "FieldAt": {
+      "description": "a field's path inside a declaration and the nearest source position on it.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "path"
+      ]
+    },
+    "InternalFrame": {
+      "description": "a frame in Shikumi's own Nix: a file of the declaration layer, relative to the layer, and the\nposition in it.",
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "column"
       ]
     },
     "Manifest": {
@@ -365,10 +487,98 @@
         }
       ]
     },
+    "Origin": {
+      "description": "whose the failure is to fix.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "user": {
+              "$ref": "#/$defs/UserOrigin"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "user"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "shikumi": {
+              "$ref": "#/$defs/ShikumiOrigin"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "shikumi"
+          ]
+        }
+      ]
+    },
     "RelativePath": {
       "description": "a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part",
       "type": "string",
       "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$"
+    },
+    "Segment": {
+      "description": "one step of a field's path: an attribute name, or a list element's index.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      ]
+    },
+    "ShikumiOrigin": {
+      "description": "a bug in Shikumi, whose Nix never fails on user input.",
+      "type": "object",
+      "properties": {
+        "frames": {
+          "description": "the frames in Shikumi's own Nix, innermost first, for the report.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InternalFrame"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "frames"
+      ]
+    },
+    "UserOrigin": {
+      "description": "a failure that passed through the repository's files, or one in a value the user wrote.",
+      "type": "object",
+      "properties": {
+        "field": {
+          "description": "the field holding text that isn't valid UTF-8, where the evaluator could be made to say.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FieldAt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "frames": {
+          "description": "the frames in the repository's files, innermost first: where the failure happened in the\nuser's code, then what led there. empty where the evaluator gives no position there.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/At"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "frames"
+      ]
     }
   }
 }

@@ -124,6 +124,29 @@ in
         diff -u ${references}/broken/findings.txt <(grep -v '^shikumi: ' $out/broken.list.stderr)
         grep -q '^shikumi: the declarations are refused, with' $out/broken.list.stderr
         echo "broken: refused, with the tracked findings where each view puts them"
+
+        # declarations that fail to evaluate are findings like any other, each at the user's line,
+        # beside the findings of the declarations that evaluated.
+        run failures.findings.txt 1 registry check --root ${fixtures}/failures
+        diff -u ${references}/failures/findings.txt $out/failures.findings.txt
+        run failures.document.json 1 registry check --format json --root ${fixtures}/failures
+        diff -u ${references}/failures/document.json $out/failures.document.json
+        for view in list document "show sound"; do
+          label=''${view%% *}
+          run failures.$label 1 registry $view --root ${fixtures}/failures
+          [ ! -s $out/failures.$label ]
+          diff -u ${references}/failures/findings.txt <(grep -v '^shikumi: ' $out/failures.$label.stderr)
+        done
+        echo "failures: refused, with the tracked findings, by every view"
+
+        # a manifest that doesn't evaluate leaves no project to read, and is the one finding.
+        mkdir -p unparsed
+        printf '{\n  projects = { a = "a" }\n}\n' > unparsed/shikumi.nix
+        run unparsed.findings.txt 1 registry check --root unparsed
+        grep -q '^error\[syntax\]: ' $out/unparsed.findings.txt
+        grep -q -- '--> shikumi.nix:2:24$' $out/unparsed.findings.txt
+        [ "$(grep -c '^error' $out/unparsed.findings.txt)" -eq 1 ]
+        echo "unparsed manifest: one finding, at the manifest"
       '';
 
   # identical across worktrees, and nothing written into the checkout. the basic fixture becomes a
@@ -207,6 +230,8 @@ in
           nix
           shikumi
           pkgs.diffutils
+          pkgs.jq
+          pkgs.util-linux
         ];
       }
       ''
