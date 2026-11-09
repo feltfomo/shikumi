@@ -1,0 +1,147 @@
+# the gate's checks on the declaration layer and the registry document. each runs in the Nix build
+# sandbox, where there's no daemon: the producer evaluates against `dummy://`, which needs none, and
+# nix-unit and the control evaluations get a store of their own under the build's temporary
+# directory. each check takes only the files it reads, so editing a unit test reruns `declarations`
+# alone.
+{
+  pkgs,
+  # the packaged `shikumi`, which runs the declaration layer it ships.
+  shikumi,
+  nix-unit,
+  # the nixpkgs source tree the layer runs on.
+  nixpkgs,
+  # the declaration layer as `shikumi` ships it, for the control evaluations.
+  layer,
+  # all of nix/declarations, since the unit tests import the layer from beside them.
+  tests,
+  # the fixture repositories, the planted cases and the worktree leak, each on its own.
+  fixtures,
+  planted,
+  worktreeLeak,
+  # the basic fixture's document, tracked beside the registry crate. every implementation has to
+  # write exactly these bytes, which keeps them identical to each other and to what the registry
+  # crate's tests render.
+  expectedDocument,
+}:
+let
+  inherit (pkgs) lib;
+
+  # every implementation the producer has to keep its refusals on, as the conformance checks name
+  # them.
+  implementations = {
+    cppnix-2-35 = pkgs.nixVersions.nix_2_35;
+    determinate-3-24 = import ./determinate.nix { inherit pkgs; };
+    lix-2-95 = pkgs.lixPackageSets.lix_2_95.lix;
+    lix-2-96 = pkgs.lixPackageSets.lix_2_96.lix;
+  };
+
+  # what every run needs: Nix keeps its caches under the build's own directory, since the sandbox
+  # has no home.
+  prelude = ''
+    set -euo pipefail
+    export XDG_CACHE_HOME="$TMPDIR/cache"
+  '';
+in
+{
+  declarations =
+    pkgs.runCommand "declarations"
+      {
+        nativeBuildInputs = [ nix-unit ];
+      }
+      ''
+        ${prelude}
+        nix-unit --eval-store "$TMPDIR/store" --option store "$TMPDIR/store" \
+          --option allow-import-from-derivation false \
+          ${tests}/tests/default.nix --argstr nixpkgs ${nixpkgs}
+        touch $out
+      '';
+
+  # identical across worktrees, and nothing written into the checkout. the basic fixture becomes a
+  # Git repository and a second worktree of the same commit, at paths that differ in every
+  # component, depth and name included. the document comes out byte for byte the same from both,
+  # globally and focused, and neither worktree's files change. a planted declaration that writes
+  # only its worktree's directory name into the document has to make the two differ.
+  registry-worktrees =
+    pkgs.runCommand "registry-worktrees"
+      {
+        nativeBuildInputs = [
+          shikumi
+          pkgs.nixVersions.nix_2_35
+          pkgs.git
+          pkgs.diffutils
+        ];
+      }
+      ''
+        ${prelude}
+        mkdir -p $out
+        git() { command git -c user.name=shikumi -c user.email=shikumi@invalid -c init.defaultBranch=main "$@"; }
+
+        # two worktrees of one commit of the given fixture, under $1 and $2.
+        worktrees() {
+          mkdir -p "$(dirname "$2")" "$(dirname "$3")"
+          cp -r "$1" "$2"
+          chmod -R u+w "$2"
+          git -C "$2" init -q
+          git -C "$2" add -A
+          git -C "$2" commit -q -m fixture
+          git -C "$2" worktree add -q "$3"
+        }
+
+        # every path, type, mode and content in a directory, Git's own files included.
+        snapshot() {
+          (cd "$1" && find . -printf '%p %y %m %l\n' | sort && find . -type f -print0 | sort -z | xargs -0 sha256sum)
+        }
+
+        first=$TMPDIR/a/repo
+        second=$TMPDIR/second-place/deeper/checkout-two
+        worktrees ${fixtures}/basic "$first" "$second"
+        snapshot "$first" > $out/first-before
+        snapshot "$second" > $out/second-before
+
+        for focus in "" core docs; do
+          label=''${focus:-global}
+          args=(registry document)
+          [ -n "$focus" ] && args+=(--focus "$focus")
+          (cd "$first" && shikumi "''${args[@]}") > $out/$label-first.json
+          (cd "$second" && shikumi "''${args[@]}") > $out/$label-second.json
+          cmp $out/$label-first.json $out/$label-second.json
+          echo "$label: identical from both worktrees"
+        done
+
+        snapshot "$first" > $out/first-after
+        snapshot "$second" > $out/second-after
+        diff $out/first-before $out/first-after
+        diff $out/second-before $out/second-after
+        echo "neither worktree changed"
+
+        worktrees ${worktreeLeak} $TMPDIR/b/leak $TMPDIR/elsewhere/deeper/leak-two
+        shikumi registry document --root $TMPDIR/b/leak > $out/leak-first.json
+        shikumi registry document --root $TMPDIR/elsewhere/deeper/leak-two > $out/leak-second.json
+        if cmp -s $out/leak-first.json $out/leak-second.json; then
+          echo "the planted location leak produced identical documents" >&2
+          exit 1
+        fi
+        echo "the planted location leak was caught:"
+        diff $out/leak-first.json $out/leak-second.json || true
+      '';
+
+}
+// lib.mapAttrs' (
+  name: nix:
+  # no builds during evaluation, on each implementation as its own check, so they build side by side
+  # and a failure names its implementation. `declarations-no-builds.sh` holds what each one runs.
+  lib.nameValuePair "registry-no-builds-${name}" (
+    pkgs.runCommand "registry-no-builds-${name}"
+      {
+        nativeBuildInputs = [
+          nix
+          shikumi
+          pkgs.diffutils
+        ];
+      }
+      ''
+        bash ${./declarations-no-builds.sh} ${layer} ${nixpkgs} ${fixtures} ${planted} \
+          ${expectedDocument} $out
+      ''
+  )
+) implementations

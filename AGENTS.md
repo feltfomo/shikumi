@@ -62,6 +62,17 @@ output for the current system:
   the VM's store. These checks exist only on Linux, and they
   need KVM: without `/dev/kvm` and the `kvm` system feature the builder refuses them. Each boots a VM
   and builds its Nix if the cache lacks it; Determinate Nix is built from source.
+- `declarations`: the declaration layer's nix-unit tests, in `nix/declarations/tests/`, which call
+  `compose` on the fixture repositories beside them.
+- `registry-no-builds-cppnix-2-35`, `registry-no-builds-determinate-3-24`, `registry-no-builds-lix-2-95`
+  and `registry-no-builds-lix-2-96`: under that implementation, the packaged `shikumi` produces the
+  basic fixture's document exactly as `crates/registry/fixtures/basic/document.json` holds it, refuses
+  the broken fixture, and refuses each planted declaration under `nix/declarations/tests/planted/`,
+  which reaches for a build's output or a program; a control evaluation without the producer's
+  refusals has to reach it. Defined, with the next one, in `nix/declarations-checks.nix`, and run by
+  `nix/declarations-no-builds.sh`.
+- `registry-worktrees`: the document from two Git worktrees of one commit at different paths is
+  byte-identical, neither worktree's files change, and a planted location leak makes the two differ.
 
 The checks see only what Git tracks, so a new file needs `git add --intent-to-add` before the gate sees
 it. For quick passes while working, run the same tools inside `nix develop`: `cargo nextest run`,
@@ -69,6 +80,10 @@ it. For quick passes while working, run the same tools inside `nix develop`: `ca
 One conformance VM builds on its own with `nix build .#checks.x86_64-linux.conformance-lix-2-95`; its
 reports are `report-cli.txt`, `report-socket.txt` and `report-ssh.txt` in the result, each beside the
 run's stderr, and the build log prints them too.
+
+The declaration checks build alone the same way, such as `nix build .#checks.x86_64-linux.declarations`.
+The `registry-no-builds-*` checks and `registry-worktrees` keep each run's documents and stderr in their
+result.
 
 A full gate run is a long run. It goes through the maintainer's run queue, as the standing instructions
 say.

@@ -3,8 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # the runner for the gate's Nix evaluation tests. no output uses it yet: it's locked now so the
-    # first Nix logic worth asserting lands with its tests rather than with a new input.
+    # the runner for the gate's Nix evaluation tests: the `declarations` check runs the declaration
+    # layer's tests with it.
     nix-unit = {
       url = "github:nix-community/nix-unit";
       inputs = {
@@ -18,7 +18,11 @@
   };
 
   outputs =
-    { self, nixpkgs, ... }:
+    {
+      self,
+      nixpkgs,
+      nix-unit,
+    }:
     let
       inherit (nixpkgs) lib;
 
@@ -45,6 +49,21 @@
       nixSource = lib.fileset.toSource {
         root = ./.;
         fileset = lib.fileset.fileFilter (file: file.hasExt "nix") ./.;
+      };
+
+      # one directory of the tree on its own, so a check rebuilds only when what it reads changes.
+      sourceOf =
+        directory:
+        lib.fileset.toSource {
+          root = directory;
+          fileset = directory;
+        };
+
+      # the declaration layer as `shikumi` ships it, without its tests, so editing a test or a
+      # fixture doesn't rebuild the package.
+      declarationLayer = lib.fileset.toSource {
+        root = ./nix/declarations;
+        fileset = lib.fileset.difference ./nix/declarations ./nix/declarations/tests;
       };
 
       perSystem =
@@ -91,6 +110,8 @@
               "repo-check"
               "--package"
               "shikumi-conformance"
+              "--package"
+              "shikumi"
             ];
             # nextest owns the workspace tests; building them again here would only add time.
             doCheck = false;
@@ -109,6 +130,20 @@
           repoCheck = named "repo-check";
           conformance = named "shikumi-conformance";
 
+          # the CLI with the declaration layer it ships and the nixpkgs that layer runs on. the
+          # nixpkgs is this flake's pin until Shikumi's own lock pins it.
+          shikumi =
+            pkgs.runCommand "shikumi"
+              {
+                nativeBuildInputs = [ pkgs.makeWrapper ];
+                meta.mainProgram = "shikumi";
+              }
+              ''
+                makeWrapper ${lib.getExe (named "shikumi")} $out/bin/shikumi \
+                  --set SHIKUMI_NIX ${declarationLayer} \
+                  --set SHIKUMI_NIXPKGS ${nixpkgs}
+              '';
+
           # the tracked file set is exactly the flake source, so the checks list it from there.
           repoCheckRun =
             { name, subcommand }:
@@ -121,7 +156,7 @@
         {
           packages = {
             repo-check = repoCheck;
-            inherit conformance;
+            inherit conformance shikumi;
           };
 
           devShells.default = pkgs.mkShell {
@@ -143,6 +178,16 @@
             lib.optionalAttrs (lib.hasSuffix "-linux" system) (
               import ./nix/conformance.nix { inherit pkgs conformance; }
             )
+            // import ./nix/declarations-checks.nix {
+              inherit pkgs shikumi nixpkgs;
+              nix-unit = nix-unit.packages.${system}.default;
+              layer = declarationLayer;
+              tests = sourceOf ./nix/declarations;
+              fixtures = sourceOf ./nix/declarations/tests/fixtures;
+              planted = sourceOf ./nix/declarations/tests/planted;
+              worktreeLeak = sourceOf ./nix/declarations/tests/worktree-leak;
+              expectedDocument = ./crates/registry/fixtures/basic/document.json;
+            }
             // {
               # rustfmt reads sources only, so this check leaves out the vendored dependencies and
               # doesn't rebuild when they change.
