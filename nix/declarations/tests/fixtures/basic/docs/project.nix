@@ -1,4 +1,6 @@
-{
+# a declaration file is called with only the arguments it names.
+{ shikumi }:
+shikumi.project {
   project = {
     summary = "The documentation site";
     maintainers = [ "writers" ];

@@ -1,4 +1,5 @@
-{
+{ shikumi }:
+shikumi.project {
   project = {
     summary = "Lives at ${toString ./.}";
     maintainers = [ "someone" ];

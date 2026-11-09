@@ -1,4 +1,5 @@
-{
+{ shikumi }:
+shikumi.project {
   project = {
     summary = "Extension values the schemas refuse";
     maintainers = [ "someone" ];

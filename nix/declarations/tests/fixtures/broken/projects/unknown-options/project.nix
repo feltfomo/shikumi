@@ -1,4 +1,5 @@
-{
+{ shikumi }:
+shikumi.project {
   project = {
     summary = "Sets options Shikumi doesn't have";
     maintainers = [ "someone" ];

@@ -1,4 +1,5 @@
-{
+{ shikumi }:
+shikumi.project {
   project = {
     summary = "Names that aren't identifiers";
     maintainers = [ "someone" ];

@@ -1,4 +1,5 @@
-{
+{ shikumi }:
+shikumi.project {
   project = {
     summary = "Claims the same names as its twin";
     maintainers = [ "someone" ];

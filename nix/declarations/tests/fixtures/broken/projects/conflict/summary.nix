@@ -1,1 +1,0 @@
-{ project.summary = "Another summary"; }

@@ -3,10 +3,27 @@
 # this file.
 { lib }:
 let
-  schema = import ./schema.nix { inherit lib; };
+  factory = import ./factory.nix;
+  types = import ./vocabulary.nix;
+  serialize = import ./serialize.nix { inherit lib; };
+
+  shikumi = {
+    inherit (factory) project;
+    lib = {
+      inherit compose types modules;
+    };
+  };
+
+  compose = import ./compose.nix {
+    inherit lib serialize types;
+    inherit (factory) isProject;
+    # a declaration file is a function of these, or a value on its own.
+    arguments = { inherit shikumi lib; };
+  };
+
+  modules = import ./modules.nix { inherit (factory) isProject; };
 in
-{
-  compose = import ./compose.nix { inherit lib schema; };
-  # the vocabulary a repository writes its extension schemas in.
-  inherit (schema) types;
+shikumi.lib
+// {
+  inherit (factory) project;
 }

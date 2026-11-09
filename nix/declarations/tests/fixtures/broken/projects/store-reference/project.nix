@@ -1,3 +1,4 @@
+{ shikumi }:
 let
   built = derivation {
     name = "fixture";
@@ -5,7 +6,7 @@ let
     builder = "/bin/sh";
   };
 in
-{
+shikumi.project {
   project = {
     summary = "Built by ${built}";
     maintainers = [ "someone" ];

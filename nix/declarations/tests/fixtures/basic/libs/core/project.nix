@@ -1,22 +1,15 @@
-{
-  imports = [ ./local.nix ];
-  project = {
-    summary = "The shared core library";
-    maintainers = [ "core-team" ];
-  };
-  steps = {
-    build = {
-      description = "Compile the library";
-      exec = "make";
+# a declaration split across files with plain `import` and `//`.
+{ shikumi, ... }:
+shikumi.project (
+  {
+    project = {
+      summary = "The shared core library";
+      maintainers = [ "core-team" ];
     };
-    test = {
-      description = "Run the unit tests";
-      exec = "make test";
-      after = [ "build" ];
+    extensions.team = {
+      owner = "platform";
+      tier = "critical";
     };
-  };
-  extensions.team = {
-    owner = "platform";
-    tier = "critical";
-  };
-}
+  }
+  // import ./steps.nix
+)
