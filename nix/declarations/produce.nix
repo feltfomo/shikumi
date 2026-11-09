@@ -26,17 +26,18 @@ let
     ;
 
   shikumi = import ./. { lib = import (/. + nixpkgs + "/lib"); };
+  layer = fromJSON (builtins.readFile ./layer.json);
   checkout = /. + root;
   asked = fromJSON request;
 
   composed = shikumi.compose {
     root = checkout;
-    manifest = checkout + "/shikumi.nix";
+    manifest = checkout + "/${layer.manifest.name}";
   };
 
   # the frame that names a project in a trace, around everything its answer forces. the name is
-  # JSON, so any name reads back exactly; the producer reads this text, so the two change together.
-  within = name: addErrorContext "shikumi-project ${toJSON name}";
+  # JSON, so any name reads back exactly; the frame's text is the layer table's.
+  within = name: addErrorContext "${layer.frames.project} ${toJSON name}";
 
   # every project is written out as JSON inside the frame that names it, so a failure anywhere in
   # its declaration, an invalid string included, names it. a string that isn't UTF-8 fails only
@@ -53,7 +54,7 @@ let
   strings =
     path: at: node:
     if node.kind == "string" then
-      addErrorContext "shikumi-field ${toJSON { inherit path at; }}" (toJSON node.value)
+      addErrorContext "${layer.frames.field} ${toJSON { inherit path at; }}" (toJSON node.value)
     else if node.kind == "attrs" then
       foldl' (
         written: name:

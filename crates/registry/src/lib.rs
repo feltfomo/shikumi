@@ -10,6 +10,7 @@ pub mod document;
 pub mod evaluation;
 mod failure;
 mod graph;
+pub mod layer;
 pub mod produce;
 pub mod reference;
 pub mod render;

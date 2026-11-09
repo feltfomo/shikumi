@@ -24,18 +24,12 @@ use crate::declarations::{
     At, Failure, FailureKind, FieldAt, InternalFrame, Origin, ShikumiOrigin, UserOrigin,
 };
 use crate::document::Segment;
+use crate::layer::FRAMES;
 
-/// the text of the frame `produce.nix` puts around every evaluation of a project's declaration,
-/// followed by the project's name as JSON.
-const PROJECT_FRAME: &str = "shikumi-project ";
-/// the text of the frame `produce.nix` puts around writing out each string of a located
-/// declaration, followed by the field's path and position as JSON.
-const FIELD_FRAME: &str = "shikumi-field ";
-/// the text of the frame `forced.nix` puts around the first forcing of every value a user wrote.
-const VALUE_FRAME: &str = "shikumi-value";
-/// the file of that frame, whose own frame, the call that forces, is the forced value's and not
-/// Shikumi's code running.
-const FORCED_FILE: &str = "forced.nix";
+/// what a frame of the layer's says after its fixed text and a space, the JSON it carries.
+fn framed<'d>(description: &'d str, frame: &str) -> Option<&'d str> {
+    description.strip_prefix(frame)?.strip_prefix(' ')
+}
 
 /// the line Lix prints after a failure's message and snippet when a derivation was involved.
 const DERIVATIONS_NOTE: &str = "note: trace involved the following derivations:";
@@ -112,13 +106,13 @@ pub(crate) fn classify(stderr: &str, places: Places<'_>) -> Classified {
     let project = error
         .frames
         .iter()
-        .find_map(|frame| frame.description.strip_prefix(PROJECT_FRAME))
+        .find_map(|frame| framed(frame.description, FRAMES.project))
         .and_then(|name| serde_json::from_str::<String>(name).ok());
     let field = error
         .frames
         .iter()
         .rev()
-        .find_map(|frame| frame.description.strip_prefix(FIELD_FRAME))
+        .find_map(|frame| framed(frame.description, FRAMES.field))
         .and_then(located);
 
     // frames inside the innermost forcing of a user's value ran that value's own code, and any of
@@ -128,7 +122,7 @@ pub(crate) fn classify(stderr: &str, places: Places<'_>) -> Classified {
     let forcing = error
         .frames
         .iter()
-        .rposition(|frame| frame.description == VALUE_FRAME);
+        .rposition(|frame| frame.description == FRAMES.value);
     let mut frames: Vec<At> = Vec::new();
     let mut internal: Vec<InternalFrame> = Vec::new();
     let mut shikumi_ran = false;
@@ -142,7 +136,7 @@ pub(crate) fn classify(stderr: &str, places: Places<'_>) -> Classified {
         match place(position, places) {
             Some(Owner::User(at)) if frames.last() != Some(&at) => frames.push(at),
             Some(Owner::Shikumi(frame)) => {
-                shikumi_ran |= frame.file != FORCED_FILE
+                shikumi_ran |= frame.file != FRAMES.forced_file
                     && match (placed, forcing) {
                         (_, None) => true,
                         (Placed::Frame(index), Some(forcing)) => index > forcing,

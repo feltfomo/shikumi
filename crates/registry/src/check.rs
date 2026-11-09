@@ -17,23 +17,19 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use rayon::prelude::*;
-use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::contract::{NonEmpty, RelativePath, Scalar};
+use crate::contract::{RelativePath, Scalar};
 use crate::declarations::{
     At, Declaration, Declarations, Evaluated, Failure, FailureKind, Field, Manifest, Node, Origin,
 };
 use crate::document::{
-    Code, Command, Diagnostic, Document, Identifier, Location, Project, Related, Remainder,
-    SchemaName, Segment, Service, Severity, Step, Text, Version, identifier, text,
+    Code, Diagnostic, Document, Identifier, Location, Project, Related, Remainder, SchemaName,
+    Segment, Severity, Step, Version, identifier, text,
 };
 use crate::graph::{self, Edge};
-use crate::produce::MANIFEST;
-use crate::vocabulary::{self, Presence, Record, Type};
-
-/// the declaration file every listed directory holds.
-pub const DECLARATION_FILE: &str = "project.nix";
+use crate::layer::{DECLARATION, MANIFEST};
+use crate::vocabulary::{self, ManifestField, Presence, Record, Type, names};
 
 /// how many of the places in the user's code that led to a failure are shown after the one it
 /// happened at; a recursion through the user's code can pass a handful of places many times.
@@ -49,7 +45,7 @@ pub fn check(declarations: &Declarations, root: &str) -> Result<Document, CheckE
         // every project's directory is the manifest's to say, so with no manifest there's nothing
         // else to read.
         Evaluated::Failed(failed) => {
-            let file = RelativePath::checked(MANIFEST.to_owned());
+            let file = RelativePath::checked(MANIFEST.name.to_owned());
             let (here, path, report) = failure(&file, &failed.failure);
             let found = diagnostic(None, path, here, report);
             Ok(document(vec![found], None, &BTreeMap::new(), Vec::new()))
@@ -143,49 +139,13 @@ impl Finding {
     }
 }
 
-/// a declaration as the checker accepted it, in the document's own types: defaults applied, and
-/// command lines left out, since the record never carries them.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Declared {
-    project: Head,
-    steps: BTreeMap<Identifier, Step>,
-    commands: BTreeMap<Identifier, Command>,
-    services: BTreeMap<Identifier, Service>,
-    extensions: BTreeMap<Identifier, Value>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Head {
-    summary: Text,
-    maintainers: NonEmpty<Text>,
-    depends_on: Vec<Identifier>,
-}
-
-impl Declared {
-    fn into_project(self, directory: RelativePath) -> Project {
-        Project {
-            directory,
-            summary: self.project.summary,
-            maintainers: self.project.maintainers,
-            depends_on: self.project.depends_on,
-            steps: self.steps,
-            commands: self.commands,
-            services: self.services,
-            extensions: self.extensions,
-        }
-    }
-}
-
 /// what one listed project came to, for the rules across projects.
 struct Checked<'a> {
     name: Identifier,
-    directory: RelativePath,
     file: RelativePath,
     /// the declaration as written, for locating findings in it, and as accepted, when it had no
     /// finding of its own.
-    accepted: Option<(&'a Node, Declared)>,
+    accepted: Option<(&'a Node, Project)>,
 }
 
 /// the name spaces in which a name has one owner across the composition: commands share the
@@ -199,12 +159,12 @@ enum Shared {
 impl Shared {
     fn field(self) -> &'static str {
         match self {
-            Self::Commands => "commands",
-            Self::Services => "services",
+            Self::Commands => names::COMMANDS,
+            Self::Services => names::SERVICES,
         }
     }
 
-    fn names(self, declared: &Declared) -> Box<dyn Iterator<Item = &Identifier> + '_> {
+    fn names(self, declared: &Project) -> Box<dyn Iterator<Item = &Identifier> + '_> {
         match self {
             Self::Commands => Box::new(declared.commands.keys()),
             Self::Services => Box::new(declared.services.keys()),
@@ -276,7 +236,8 @@ impl<'a> Checker<'a> {
     }
 
     // the manifest's fields: the listed directories by project name, None where an entry is
-    // invalid, and the extension schemas that are sound.
+    // invalid, and the extension schemas that are sound. each field is found in the manifest's
+    // one definition, and handled by what it is there.
     fn manifest(
         &mut self,
         node: &'a Node,
@@ -284,14 +245,18 @@ impl<'a> Checker<'a> {
     ) -> (Directories, BTreeMap<String, Type>) {
         let mut directories = BTreeMap::new();
         let mut extensions = BTreeMap::new();
+        let definition = vocabulary::manifest();
         let Some(fields) = self.attribute_set(node, here, "an attribute set") else {
             return (directories, extensions);
         };
         for (name, field) in fields {
             let here = here.within(field);
             self.path.push(Segment::Field(name.clone()));
-            match name.as_str() {
-                "projects" => {
+            match ManifestField::named(name) {
+                Some(ManifestField::Projects) => {
+                    let Type::Attrs(directory) = ManifestField::Projects.field().ty else {
+                        unreachable!("the manifest's projects are an attribute set");
+                    };
                     if let Some(entries) =
                         self.attribute_set(&field.value, here, "an attribute set")
                     {
@@ -301,55 +266,82 @@ impl<'a> Checker<'a> {
                             self.project = identifier(project);
                             let valid_name = self.key(project, here);
                             let directory = self
-                                .scalar(Scalar::Path, &entry.value, here)
+                                .value(&directory, &entry.value, here)
                                 .filter(|_| valid_name)
-                                .map(|directory| RelativePath::checked(directory.to_owned()));
+                                .and_then(|directory| match directory {
+                                    Value::String(directory) => {
+                                        Some(RelativePath::checked(directory))
+                                    }
+                                    _ => None,
+                                });
                             directories.insert(project.clone(), directory);
                             self.project = None;
                             self.path.pop();
                         }
                     }
                 }
-                "extensions" => {
+                Some(ManifestField::Extensions) => {
                     if let Some(schemas) =
                         self.attribute_set(&field.value, here, "an attribute set")
                     {
                         for (namespace, schema) in schemas {
                             let here = here.within(schema);
                             self.path.push(Segment::Field(namespace.clone()));
-                            if self.key(namespace, here) {
-                                match Type::from_schema(&schema.value) {
-                                    Some(ty) => {
-                                        extensions.insert(namespace.clone(), ty);
-                                    }
-                                    None => self.report(
-                                        here,
-                                        finding(
-                                            Code::Invalid,
-                                            "must be a schema built from `shikumi.lib.types`",
-                                        ),
-                                    ),
-                                }
+                            if self.key(namespace, here)
+                                && let Some(ty) = self.schema(&schema.value, here)
+                            {
+                                extensions.insert(namespace.clone(), ty);
                             }
                             self.path.pop();
                         }
                     }
                 }
-                _ if !self.safe_key(name, here) => {}
-                _ => self.unknown_option(here, name, ["projects", "extensions"]),
+                None if !self.safe_key(name, here) => {}
+                None => self.unknown_option(here, name, definition.names()),
             }
             self.path.pop();
         }
-        if !fields.contains_key("projects") {
-            self.path.push(Segment::Field("projects".to_owned()));
+        self.missing(&definition, fields, here);
+        (directories, extensions)
+    }
+
+    // a schema a repository wrote with `shikumi.lib.types`, read as a type.
+    fn schema(&mut self, node: &Node, here: Here<'_>) -> Option<Type> {
+        let read = Type::from_schema(node);
+        if read.is_none() {
             self.report(
                 here,
-                finding(Code::Missing, "is required but not defined")
-                    .help("list each project's directory: `projects.<name> = \"<directory>\";`"),
+                finding(
+                    Code::Invalid,
+                    "must be a schema built from `shikumi.lib.types`",
+                ),
             );
-            self.path.pop();
         }
-        (directories, extensions)
+        read
+    }
+
+    // every required field of `record` an attribute set leaves out, each as a finding; whether
+    // there was one.
+    fn missing(
+        &mut self,
+        record: &Record,
+        fields: &BTreeMap<String, Field>,
+        here: Here<'_>,
+    ) -> bool {
+        let mut any = false;
+        for (name, declared) in record.fields() {
+            if matches!(declared.presence, Presence::Required) && !fields.contains_key(name) {
+                self.path.push(Segment::Field(name.clone()));
+                self.report(
+                    here,
+                    finding(Code::Missing, "is required but not defined")
+                        .help(format!("add `{name} = ...;`")),
+                );
+                self.path.pop();
+                any = true;
+            }
+        }
+        any
     }
 
     // a listed directory at or inside another's. sorted by components, the directories inside one
@@ -378,7 +370,7 @@ impl<'a> Checker<'a> {
             if let Some((_, outer_name, outer_directory)) = holding.last() {
                 self.project = identifier(inner_name);
                 self.path = vec![
-                    Segment::Field("projects".to_owned()),
+                    Segment::Field(ManifestField::Projects.name().to_owned()),
                     Segment::Field((*inner_name).clone()),
                 ];
                 let entry = self.manifest_entry(inner_name);
@@ -427,10 +419,9 @@ impl<'a> Checker<'a> {
         declaration: Option<&'a Evaluated<Declaration>>,
         record: &Type,
     ) -> Result<Checked<'a>, CheckError> {
-        let file = RelativePath::checked(format!("{directory}/{DECLARATION_FILE}"));
+        let file = RelativePath::checked(format!("{directory}/{}", DECLARATION.name));
         let mut checked = Checked {
             name: name.clone(),
-            directory: directory.clone(),
             file: file.clone(),
             accepted: None,
         };
@@ -438,7 +429,7 @@ impl<'a> Checker<'a> {
         match declaration {
             None => {
                 self.path = vec![
-                    Segment::Field("projects".to_owned()),
+                    Segment::Field(ManifestField::Projects.name().to_owned()),
                     Segment::Field(name.to_string()),
                 ];
                 let entry = self.manifest_entry(name.as_str());
@@ -446,7 +437,7 @@ impl<'a> Checker<'a> {
                     entry,
                     finding(
                         Code::NoDeclaration,
-                        format!("lists `{directory}`, which has no {DECLARATION_FILE}"),
+                        format!("lists `{directory}`, which has no {}", DECLARATION.name),
                     )
                     .help(format!(
                         "add `{file}`, or take `{name}` out of the manifest"
@@ -464,9 +455,13 @@ impl<'a> Checker<'a> {
                 let kind = declaration.value.kind();
                 // a function that comes back is one that asked for an argument it isn't given.
                 let help = if matches!(declaration.value, Node::Function) {
-                    "a declaration file takes only `shikumi` and `lib`: `{ shikumi, ... }: shikumi.project { ... }`"
+                    format!(
+                        "a declaration file takes only {}: `{{ shikumi, ... }}: shikumi.project {{ ... }}`",
+                        DECLARATION.called_with()
+                    )
                 } else {
                     "pass the record through the factory: `{ shikumi, ... }: shikumi.project { ... }`"
+                        .to_owned()
                 };
                 self.report(
                     Here::File(&file),
@@ -479,11 +474,12 @@ impl<'a> Checker<'a> {
             }
             Some(Evaluated::Value(declaration)) => {
                 if let Some(value) = self.value(record, &declaration.value, Here::File(&file)) {
-                    let declared = serde_json::from_value(value).map_err(|error| CheckError {
+                    let project = vocabulary::document_value(value, directory);
+                    let project = serde_json::from_value(project).map_err(|error| CheckError {
                         project: name.clone(),
                         error,
                     })?;
-                    checked.accepted = Some((&declaration.value, declared));
+                    checked.accepted = Some((&declaration.value, project));
                 }
             }
         }
@@ -498,19 +494,20 @@ impl<'a> Checker<'a> {
         };
         self.project = Some(project.name.clone());
         let file = Here::File(&project.file);
-        for (index, dependency) in declared.project.depends_on.iter().enumerate() {
+        for (index, dependency) in declared.depends_on.iter().enumerate() {
             if !directories.contains_key(dependency.as_str()) {
                 self.reference(
                     declaration,
                     file,
-                    &["project", "dependsOn"],
+                    &[names::PROJECT, names::DEPENDS_ON],
                     index,
                     finding(
                         Code::UnknownReference,
                         format!("names `{dependency}`, which isn't a listed project"),
                     )
                     .help(format!(
-                        "list `{dependency}` in the manifest, or take it out of `dependsOn`"
+                        "list `{dependency}` in the manifest, or take it out of `{}`",
+                        names::DEPENDS_ON
                     )),
                 );
             }
@@ -521,7 +518,7 @@ impl<'a> Checker<'a> {
                     self.reference(
                         declaration,
                         file,
-                        &["steps", step.as_str(), "after"],
+                        &[names::STEPS, step.as_str(), names::AFTER],
                         index,
                         finding(
                             Code::UnknownReference,
@@ -556,7 +553,7 @@ impl<'a> Checker<'a> {
     // against the dependency its first project in name order takes into it, with every other
     // dependency in the loop as a related location.
     fn dependency_loops(&mut self, checked: &[Checked<'a>]) {
-        let accepted: Vec<(&Checked<'a>, &Node, &Declared)> = checked
+        let accepted: Vec<(&Checked<'a>, &Node, &Project)> = checked
             .iter()
             .filter_map(|project| {
                 let (node, declared) = project.accepted.as_ref()?;
@@ -568,7 +565,7 @@ impl<'a> Checker<'a> {
             .iter()
             .map(|(_, _, declared)| {
                 graph::edges(
-                    declared.project.depends_on.iter().map(Identifier::as_str),
+                    declared.depends_on.iter().map(Identifier::as_str),
                     &position,
                 )
             })
@@ -588,7 +585,7 @@ impl<'a> Checker<'a> {
                 let at = locate(
                     declaration,
                     Here::File(&project.file),
-                    &["project", "dependsOn"],
+                    &[names::PROJECT, names::DEPENDS_ON],
                 );
                 report = report.related(
                     at.location(),
@@ -604,7 +601,7 @@ impl<'a> Checker<'a> {
             self.reference(
                 declaration,
                 Here::File(&project.file),
-                &["project", "dependsOn"],
+                &[names::PROJECT, names::DEPENDS_ON],
                 edge.at,
                 report,
             );
@@ -635,10 +632,13 @@ impl<'a> Checker<'a> {
                 Code::Cycle,
                 format!("makes a loop: {}", graph::sentence(&names, "runs after")),
             )
-            .help("take one of these out of `after`, so the steps can be ordered");
+            .help(format!(
+                "take one of these out of `{}`, so the steps can be ordered",
+                names::AFTER
+            ));
             for (node, edge) in &found[1..] {
                 let step = steps[*node].0.as_str();
-                let at = locate(declaration, file, &["steps", step, "after"]);
+                let at = locate(declaration, file, &[names::STEPS, step, names::AFTER]);
                 report = report.related(
                     at.location(),
                     format!("`{step}` runs after `{}` here", steps[edge.to].0),
@@ -648,7 +648,7 @@ impl<'a> Checker<'a> {
             self.reference(
                 declaration,
                 file,
-                &["steps", steps[first].0.as_str(), "after"],
+                &[names::STEPS, steps[first].0.as_str(), names::AFTER],
                 edge.at,
                 report,
             );
@@ -715,7 +715,7 @@ impl<'a> Checker<'a> {
         locate(
             &self.manifest.value,
             Here::File(&self.manifest.file),
-            &["projects", name],
+            &[ManifestField::Projects.name(), name],
         )
     }
 
@@ -911,6 +911,7 @@ impl<'a> Checker<'a> {
                 .map(Value::Object)
             }
             Type::Record(record) => self.record(record, node, here),
+            Type::Schema => self.schema(node, here).map(|_| Value::Null),
         }
     }
 
@@ -936,25 +937,14 @@ impl<'a> Checker<'a> {
                 Some(carried) => keep(&mut values, carried),
             }
         }
+        if self.missing(record, fields, here) {
+            values = None;
+        }
         for (name, declared) in record.fields() {
-            if fields.contains_key(name) {
-                continue;
-            }
-            match &declared.presence {
-                Presence::Required => {
-                    self.path.push(Segment::Field(name.clone()));
-                    self.report(
-                        here,
-                        finding(Code::Missing, "is required but not defined")
-                            .help(format!("add `{name} = ...;`")),
-                    );
-                    self.path.pop();
-                    values = None;
-                }
-                Presence::Default(default) => {
-                    keep(&mut values, Some((name.clone(), default.clone())))
-                }
-                Presence::Optional => {}
+            if let Presence::Default(default) = &declared.presence
+                && !fields.contains_key(name)
+            {
+                keep(&mut values, Some((name.clone(), default.json())));
             }
         }
         values.map(Value::Object)
@@ -1048,8 +1038,8 @@ fn document(
             checked
                 .into_iter()
                 .map(|project| {
-                    let (_, declared) = project.accepted?;
-                    Some((project.name, declared.into_project(project.directory)))
+                    let (_, accepted) = project.accepted?;
+                    Some((project.name, accepted))
                 })
                 .collect::<Option<BTreeMap<_, _>>>()
         })
@@ -1122,9 +1112,11 @@ fn failure<'f>(file: &'f RelativePath, failure: &'f Failure) -> (Here<'f>, Vec<S
             Code::UndefinedVariable,
             format!("`{detail}` is used here, but nothing defines it"),
         )
-        .help(
-            "define it in a `let`, or name it as an argument: a declaration file is called with `shikumi` and `lib`, and the manifest with `types` and `lib`",
-        ),
+        .help(format!(
+            "define it in a `let`, or name it as an argument: a declaration file is called with {}, and the manifest with {}",
+            DECLARATION.called_with(),
+            MANIFEST.called_with()
+        )),
         FailureKind::Type => finding(
             Code::TypeError,
             format!("evaluation stopped at a value of the wrong type: {detail}"),
@@ -1891,6 +1883,50 @@ mod tests {
             Some("did you mean `summary`?")
         );
         assert_eq!(closest("xyz", ["summary"]), None);
+    }
+
+    // the checker reads the manifest's fields from their one definition: a misspelling of each is
+    // matched against it, and each required one left out is reported, so a field added there
+    // reaches the messages with nothing else changed. handling it is a match on the definition's
+    // own enum, so the build fails until the checker handles it.
+    #[test]
+    fn every_manifest_field_reaches_the_checkers_messages() {
+        for field in ManifestField::ALL {
+            let mut declarations = repository(node(sound()), None);
+            let Node::Attrs { fields } = manifest_value(&mut declarations) else {
+                panic!("the test's manifest is an attribute set")
+            };
+            let written = fields.remove("projects").unwrap();
+            fields.insert(format!("{}x", field.name()), written);
+            let document = checked(&declarations, ROOT);
+            let suggested = format!("did you mean `{}`?", field.name());
+            assert!(
+                document
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == Code::UnknownOption
+                        && d.help
+                            .as_ref()
+                            .is_some_and(|help| help.as_str() == suggested)),
+                "`{}x` wasn't matched to `{}`: {:#?}",
+                field.name(),
+                field.name(),
+                document.diagnostics
+            );
+            let missing: Vec<String> = document
+                .diagnostics
+                .iter()
+                .filter(|d| d.code == Code::Missing)
+                .map(|d| ShowPath(&d.path).to_string())
+                .collect();
+            let required: Vec<String> = vocabulary::manifest()
+                .fields()
+                .iter()
+                .filter(|(_, declared)| matches!(declared.presence, Presence::Required))
+                .map(|(name, _)| name.clone())
+                .collect();
+            assert_eq!(missing, required, "{}", field.name());
+        }
     }
 
     // sorted, `a/c` follows `a/b/x` rather than `a`, so a rule that compares neighbours alone

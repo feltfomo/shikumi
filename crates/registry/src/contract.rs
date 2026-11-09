@@ -443,3 +443,65 @@ impl fmt::Display for ContractError {
 }
 
 impl std::error::Error for ContractError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // the pattern a checked string's schema publishes, as other readers apply it.
+    fn pattern<T: JsonSchema>() -> fancy_regex::Regex {
+        let schema = T::json_schema(&mut SchemaGenerator::default());
+        let pattern = schema
+            .get("pattern")
+            .and_then(|pattern| pattern.as_str())
+            .expect("a checked string's schema has a pattern");
+        fancy_regex::Regex::new(pattern).expect("the schema's pattern is a valid regex")
+    }
+
+    // each checked string's rule is written twice, as the predicate the contract checks with and
+    // as the pattern its schema publishes; these samples, at each rule's edges, hold the two to one
+    // answer.
+    #[test]
+    fn every_schema_pattern_accepts_what_its_predicate_accepts() {
+        let samples = [
+            "",
+            " ",
+            "a",
+            "A",
+            "a-b",
+            "a_b",
+            "a1",
+            "1a",
+            "-a",
+            "web",
+            "Web",
+            "apps/web",
+            "/apps",
+            "apps/",
+            "apps//web",
+            "./a",
+            "a/./b",
+            "a/../b",
+            "..",
+            ".",
+            "a.b",
+            "a b",
+            "\tx",
+        ];
+        type Rule = (&'static str, fancy_regex::Regex, fn(&str) -> bool);
+        let rules: [Rule; 3] = [
+            ("identifier", pattern::<Identifier>(), is_identifier),
+            ("text", pattern::<Text>(), is_text),
+            ("relative path", pattern::<RelativePath>(), is_relative_path),
+        ];
+        for (name, regex, predicate) in rules {
+            for sample in samples {
+                assert_eq!(
+                    regex.is_match(sample).unwrap(),
+                    predicate(sample),
+                    "{name} disagrees on {sample:?}"
+                );
+            }
+        }
+    }
+}

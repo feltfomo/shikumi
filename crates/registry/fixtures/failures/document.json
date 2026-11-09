@@ -176,7 +176,7 @@
         }
       },
       "message": "`sumary` is used here, but nothing defines it",
-      "help": "define it in a `let`, or name it as an argument: a declaration file is called with `shikumi` and `lib`, and the manifest with `types` and `lib`",
+      "help": "define it in a `let`, or name it as an argument: a declaration file is called with `lib` and `shikumi`, and the manifest with `lib` and `types`",
       "related": []
     },
     {

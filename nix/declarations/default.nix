@@ -3,6 +3,9 @@
 # this file.
 { lib }:
 let
+  # the names the layer and the registry's Rust share: each file's name and arguments, and the
+  # frames the producer reads in a trace.
+  layer = builtins.fromJSON (builtins.readFile ./layer.json);
   factory = import ./factory.nix;
   types = import ./vocabulary.nix;
   forced = import ./forced.nix;
@@ -15,16 +18,21 @@ let
     };
   };
 
+  # what a file the layer reads is offered: exactly the arguments the table names for it, so an
+  # argument the table names and nothing here provides fails rather than being left out.
+  offered = file: available: lib.genAttrs layer.${file}.arguments (name: available.${name});
+
   compose = import ./compose.nix {
     inherit
       lib
       serialize
-      types
       forced
+      layer
       ;
     inherit (factory) isProject;
     # a declaration file is a function of these, or a value on its own.
-    arguments = { inherit shikumi lib; };
+    arguments = offered "declaration" { inherit shikumi lib; };
+    manifestArguments = offered "manifest" { inherit types lib; };
   };
 
   modules = import ./modules.nix { inherit (factory) isProject; };

@@ -3,11 +3,13 @@
 //! finding codes. `docs/reference/declarations.md` is this page as tracked, and the gate's
 //! `declarations-reference` check fails when the two differ.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use crate::document::Code;
-use crate::vocabulary::{self, CONSTRUCTORS, Presence, Scalar, Type};
+use crate::layer::{DECLARATION, MANIFEST};
+use crate::vocabulary::{
+    CONSTRUCTORS, Definition, Field, NAME_PLACEHOLDER, Presence, Scalar, Type, names,
+};
 
 const INTRODUCTION: &str = "\
 # Declarations reference
@@ -18,28 +20,35 @@ checks with, so it can't describe anything else; regenerate it rather than editi
 [The capability page](capabilities.md#declarations) says how declarations work.
 ";
 
+// the text before a definition's table, naming each file and field from its own definition.
+fn before(definition: Definition) -> String {
+    match definition {
+        Definition::Declaration => format!(
+            "\n## The declaration record\n\n\
+             A project's `{}` returns `shikumi.project` applied to a record with these fields. A \
+             field marked required has no default; one with a default takes it when it's absent. \
+             `{NAME_PLACEHOLDER}` stands for any identifier.\n\n",
+            DECLARATION.name
+        ),
+        Definition::Manifest => format!(
+            "\nEach namespace under `{}` is checked against the schema the manifest declares for \
+             it, and a namespace without one is refused.\n\
+             \n## The manifest\n\n\
+             `{}` at the repository root, a record or a function of `{}` returning one.\n\n",
+            names::EXTENSIONS,
+            MANIFEST.name,
+            MANIFEST.head()
+        ),
+    }
+}
+
 /// the page, as `shikumi registry reference` prints it.
 pub fn page() -> String {
     let mut text = String::from(INTRODUCTION);
-    text.push_str(
-        "\n## The declaration record\n\n\
-         A project's `project.nix` returns `shikumi.project` applied to a record with these fields. \
-         A field marked required has no default; one with a default takes it when it's absent. \
-         `<name>` stands for any identifier.\n\n",
-    );
-    table(&mut text, &vocabulary::declaration(&BTreeMap::new()));
-    text.push_str(
-        "\nEach namespace under `extensions` is checked against the schema the manifest declares for \
-         it, and a namespace without one is refused.\n",
-    );
-    text.push_str(
-        "\n## The manifest\n\n\
-         `shikumi.nix` at the repository root, a record or a function of `{ types }` returning one.\n\n\
-         | Field | Type | Presence | What it is |\n\
-         | --- | --- | --- | --- |\n\
-         | `projects` | attribute set of path | required | each project's directory, by project name |\n\
-         | `extensions` | attribute set of schemas | default `{ }` | the schema of each extension namespace, written with `shikumi.lib.types` |\n",
-    );
+    for &definition in Definition::ALL {
+        text.push_str(&before(definition));
+        table(&mut text, &definition.record());
+    }
     text.push_str(
         "\n## Types\n\n\
          The constructors in `shikumi.lib.types`, which extension schemas are written with.\n\n\
@@ -65,10 +74,25 @@ pub fn page() -> String {
 
 fn table(text: &mut String, record: &Type) {
     text.push_str("| Field | Type | Presence | What it is |\n| --- | --- | --- | --- |\n");
-    rows(text, "", record);
+    walk("", record, &mut |path, shown, field| {
+        let presence = match &field.presence {
+            Presence::Required => "required".to_owned(),
+            Presence::Optional => "optional".to_owned(),
+            Presence::Default(empty) => format!("default `{}`", empty.nix()),
+        };
+        writeln!(
+            text,
+            "| `{path}` | {shown} | {presence} | {} |",
+            field.description.unwrap_or("")
+        )
+        .unwrap();
+    });
 }
 
-fn rows(text: &mut String, prefix: &str, ty: &Type) {
+// every field of a record, depth first in the record's order, with its path as the page writes it
+// and its type as the page shows it: a record's fields follow it, and so do those of a record each
+// entry of an attribute set holds, under `<name>`.
+fn walk(prefix: &str, ty: &Type, visit: &mut impl FnMut(&str, &str, &Field)) {
     let Type::Record(record) = ty else {
         return;
     };
@@ -78,32 +102,14 @@ fn rows(text: &mut String, prefix: &str, ty: &Type) {
             Type::Record(_) => ("record".to_owned(), Some((format!("{path}."), &field.ty))),
             Type::Attrs(element) if matches!(**element, Type::Record(_)) => (
                 "attribute set of records".to_owned(),
-                Some((format!("{path}.<name>."), &**element)),
+                Some((format!("{path}.{NAME_PLACEHOLDER}."), &**element)),
             ),
             other => (other.describe(), None),
         };
-        let presence = match &field.presence {
-            Presence::Required => "required".to_owned(),
-            Presence::Optional => "optional".to_owned(),
-            Presence::Default(value) => format!("default `{}`", nix(value)),
-        };
-        writeln!(
-            text,
-            "| `{path}` | {shown} | {presence} | {} |",
-            field.description.unwrap_or("")
-        )
-        .unwrap();
+        visit(&path, &shown, field);
         if let Some((prefix, inner)) = inner {
-            rows(text, &prefix, inner);
+            walk(&prefix, inner, visit);
         }
-    }
-}
-
-// a default as a Nix expression; the defaults are empty lists and attribute sets.
-fn nix(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Array(_) => "[ ]",
-        _ => "{ }",
     }
 }
 
@@ -111,21 +117,78 @@ fn nix(value: &serde_json::Value) -> &'static str {
 mod tests {
     use super::*;
 
-    #[test]
-    fn every_field_of_the_declaration_record_has_a_row_and_a_description() {
-        let page = page();
-        for row in [
-            "| `project.summary` | text | required |",
-            "| `project.dependsOn` | list of identifier | default `[ ]` |",
-            "| `steps.<name>.exec` | command line | required |",
-            "| `services.<name>.restart` | one of `never`, `on-failure`, `always` | required |",
-            "| `extensions` | record | default `{ }` |",
-        ] {
-            assert!(page.contains(row), "missing {row:?}:\n{page}");
+    // every definition the page has to render, named as the test reports it.
+    fn definitions() -> Vec<(String, Type)> {
+        Definition::ALL
+            .iter()
+            .map(|definition| (format!("{definition:?}"), definition.record()))
+            .collect()
+    }
+
+    // each field of each definition whose row the page lacks: its path, type, presence and a
+    // description, as the definition says them.
+    fn missing_rows(page: &str) -> Vec<String> {
+        let mut missing = Vec::new();
+        for (name, definition) in definitions() {
+            walk("", &definition, &mut |path, shown, field| {
+                let row = format!("| `{path}` | {shown} |");
+                let described = field
+                    .description
+                    .is_some_and(|description| page.contains(&format!("| {description} |")));
+                if !page.contains(&row) || !described {
+                    missing.push(format!("{name}: {path}"));
+                }
+            });
         }
+        missing
+    }
+
+    // the page is generated, and the gate compares the tracked page with the generator; this holds
+    // the generator to the definitions, so a field the checker reads can't be left off the page.
+    #[test]
+    fn every_field_of_every_definition_has_a_row_with_its_description() {
+        assert_eq!(missing_rows(&page()), Vec::<String>::new());
+        for (name, definition) in definitions() {
+            walk("", &definition, &mut |path, _, field| {
+                assert!(
+                    field.description.is_some(),
+                    "{name}: {path} has no description"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn a_page_without_one_of_the_rows_is_caught() {
+        let whole = page();
+        for (removed, definition) in [
+            ("| `projects` |", "Manifest: projects"),
+            (
+                "| `steps.<name>.after` |",
+                "Declaration: steps.<name>.after",
+            ),
+        ] {
+            let page: String = whole
+                .lines()
+                .filter(|line| !line.starts_with(removed))
+                .map(|line| format!("{line}\n"))
+                .collect();
+            assert_eq!(missing_rows(&page), [definition]);
+        }
+    }
+
+    // the page says how each file the layer reads is called, as the layer calls it.
+    #[test]
+    fn the_page_names_each_files_arguments_as_the_layer_offers_them() {
+        let page = page();
+        for file in [MANIFEST, DECLARATION] {
+            let named = format!("`{}`", file.name);
+            assert!(page.contains(&named), "{named}");
+        }
+        let head = format!("a function of `{}`", MANIFEST.head());
         assert!(
-            !page.contains("|  |"),
-            "a field has no description:\n{page}"
+            page.contains(&head),
+            "the page doesn't say the manifest is {head}"
         );
     }
 

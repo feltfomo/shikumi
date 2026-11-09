@@ -63,7 +63,7 @@ error[undefined-variable]: `sumary` is used here, but nothing defines it
   |
 4 |     summary = sumary;
   |               ^^^^^^
-  = help: define it in a `let`, or name it as an argument: a declaration file is called with `shikumi` and `lib`, and the manifest with `types` and `lib`
+  = help: define it in a `let`, or name it as an argument: a declaration file is called with `lib` and `shikumi`, and the manifest with `lib` and `types`
 
 error[thrown]: evaluation threw an error: uneven fails here first
   --> projects/uneven/project.nix:10:13

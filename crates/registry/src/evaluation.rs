@@ -78,6 +78,29 @@ impl Request<'_> {
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).expect("a request always serializes")
     }
+
+    /// the request's name: the one key `produce.nix` reads it by.
+    pub fn name(&self) -> String {
+        match serde_json::to_value(self) {
+            Ok(serde_json::Value::Object(request)) => {
+                request.into_iter().next().map(|(name, _)| name)
+            }
+            _ => None,
+        }
+        .expect("a request is written as an object with one key")
+    }
+
+    /// whether an answer is the one this request asks for. every request and every answer is
+    /// named, so a new one of either doesn't build until it's placed here.
+    pub fn answered_by(&self, answer: &Answer) -> bool {
+        match (self, answer) {
+            (Self::Plan {}, Answer::Plan(_)) => true,
+            (Self::Evaluate(asked), Answer::Projects(projects)) => projects.len() == asked.len(),
+            (Self::Locate(_), Answer::Projects(projects)) => projects.len() == 1,
+            (Self::Plan {}, Answer::Projects(_))
+            | (Self::Evaluate(_) | Self::Locate(_), Answer::Plan(_)) => false,
+        }
+    }
 }
 
 /// the published JSON schema of an evaluation's answer.
@@ -117,6 +140,50 @@ mod tests {
             Request::Locate(&names[0]).to_json(),
             r#"{"locate":{"name":"a","file":"a/project.nix"}}"#
         );
+    }
+
+    // `nix/declarations-no-builds.sh` asks the layer for a planted declaration without the
+    // producer, with the request tracked here; this holds it to the producer's own.
+    #[test]
+    fn the_no_builds_check_asks_for_a_planted_project_as_the_producer_would() {
+        let tracked = include_str!("../fixtures/planted-request.json");
+        let app = [Project {
+            name: "app".to_owned(),
+            file: RelativePath::new(format!("app/{}", crate::layer::DECLARATION.name)).unwrap(),
+        }];
+        assert_eq!(tracked.trim_end(), Request::Evaluate(&app).to_json());
+    }
+
+    #[test]
+    fn an_answer_of_another_shape_is_not_the_answer_to_a_request() {
+        let names = [Project {
+            name: "a".to_owned(),
+            file: RelativePath::new("a/project.nix").unwrap(),
+        }];
+        let projects = |count| {
+            Answer::Projects(vec![
+                Declaration {
+                    factory: true,
+                    value: crate::declarations::Node::Null
+                };
+                count
+            ])
+        };
+        let plan = Answer::Plan(Plan {
+            manifest: Manifest {
+                file: RelativePath::new("shikumi.nix").unwrap(),
+                value: crate::declarations::Node::Null,
+            },
+            files: BTreeMap::new(),
+        });
+        assert!(Request::Plan {}.answered_by(&plan));
+        assert!(!Request::Plan {}.answered_by(&projects(1)));
+        assert!(Request::Evaluate(&names).answered_by(&projects(1)));
+        assert!(!Request::Evaluate(&names).answered_by(&projects(2)));
+        assert!(!Request::Evaluate(&names).answered_by(&plan));
+        assert!(Request::Locate(&names[0]).answered_by(&projects(1)));
+        assert!(!Request::Locate(&names[0]).answered_by(&projects(0)));
+        assert_eq!(Request::Locate(&names[0]).name(), "locate");
     }
 
     #[test]

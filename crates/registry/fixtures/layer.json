@@ -1,0 +1,22 @@
+{
+  "manifest": {
+    "name": "shikumi.nix",
+    "arguments": [
+      "lib",
+      "types"
+    ]
+  },
+  "declaration": {
+    "name": "project.nix",
+    "arguments": [
+      "lib",
+      "shikumi"
+    ]
+  },
+  "frames": {
+    "value": "shikumi-value",
+    "project": "shikumi-project",
+    "field": "shikumi-field",
+    "forcedFile": "forced.nix"
+  }
+}

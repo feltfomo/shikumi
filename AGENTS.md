@@ -64,8 +64,9 @@ output for the current system:
   and builds its Nix if the cache lacks it; Determinate Nix is built from source.
 - `declarations`: the declaration layer's nix-unit tests, in `nix/declarations/tests/`: the factory,
   serialization and its source positions, the vocabulary, `compose` on the fixture repositories
-  beside them, and the module adapter in NixOS, in Home Manager from nixpkgs' pin of its source, and
-  against a copy of flake-parts' option declarations.
+  beside them, the layer's copy of the names it shares with the registry crate, and the module
+  adapter in NixOS, in Home Manager from nixpkgs' pin of its source, and against a copy of
+  flake-parts' option declarations.
 - `registry-no-builds-cppnix-2-35`, `registry-no-builds-determinate-3-24`, `registry-no-builds-lix-2-95`
   and `registry-no-builds-lix-2-96`: under that implementation, the packaged `shikumi` serializes the
   basic and broken fixtures' declarations exactly as `crates/registry/fixtures/` holds them, and refuses

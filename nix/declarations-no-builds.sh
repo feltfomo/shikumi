@@ -24,7 +24,9 @@
 # program; its `refusal` file holds the word the producer's refusal has to name. the producer has
 # to refuse each one, and a control evaluation of the same declaration without the producer's
 # refusals, on a store this build owns, has to reach what it planted, so the refusal is what
-# stopped it and not something else in the sandbox. the cases run side by side, each with its own
+# stopped it and not something else in the sandbox. the control asks the layer for the `app`
+# project with REFERENCES' `planted-request.json`, which the registry crate's tests hold to the
+# producer's own request. the cases run side by side, each with its own
 # control store. `NIX_CONFIG` turns `builtins.exec` on for every run, as a caller's configuration
 # could.
 #
@@ -166,7 +168,7 @@ plant() {
     --store "local?store=$control/store&state=$control/state&log=$control/log" \
     --option sandbox false --option build-users-group "" --option substituters "" \
     "$layer/produce.nix" --argstr nixpkgs "$nixpkgs" --argstr root "$repository" \
-    --argstr request '{"evaluate":[{"name":"app","file":"app/project.nix"}]}' \
+    --argstr request "$(cat "$references/planted-request.json")" \
     > "$out/$case.control.json" 2> "$out/$case.control.stderr" || {
     echo "the control evaluation of $case didn't reach what it planted:"
     cat "$out/$case.control.stderr"

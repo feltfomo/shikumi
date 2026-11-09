@@ -32,12 +32,12 @@ Each namespace under `extensions` is checked against the schema the manifest dec
 
 ## The manifest
 
-`shikumi.nix` at the repository root, a record or a function of `{ types }` returning one.
+`shikumi.nix` at the repository root, a record or a function of `{ lib, types }` returning one.
 
 | Field | Type | Presence | What it is |
 | --- | --- | --- | --- |
 | `projects` | attribute set of path | required | each project's directory, by project name |
-| `extensions` | attribute set of schemas | default `{ }` | the schema of each extension namespace, written with `shikumi.lib.types` |
+| `extensions` | attribute set of schema | default `{ }` | the schema of each extension namespace, written with `shikumi.lib.types` |
 
 ## Types
 

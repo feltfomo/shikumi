@@ -62,9 +62,8 @@ use crate::declarations::{
 use crate::document::{Document, Identifier, Registry, RegistryError};
 use crate::evaluation::{Answer, Evaluation, Project, Request};
 use crate::failure::{Classified, Places, classify};
-
-/// the manifest's file name at the repository root.
-pub const MANIFEST: &str = "shikumi.nix";
+use crate::layer::MANIFEST;
+use crate::vocabulary::names;
 
 /// how many batches each core gets, so a batch of slow declarations doesn't leave the other cores
 /// idle at the end of the run.
@@ -147,7 +146,7 @@ impl Producer {
             root: root.to_owned(),
             error,
         })?;
-        if !root.join(MANIFEST).is_file() {
+        if !root.join(MANIFEST.name).is_file() {
             return Err(ProduceError::NoManifest(root));
         }
         let root_text = utf8(&root)?;
@@ -248,10 +247,16 @@ impl Evaluate for Evaluator<'_> {
     }
 }
 
-fn answer(printed: &[u8]) -> Result<Answer, ProduceError> {
-    Evaluation::from_json(printed)
+/// an evaluation's answer, held to the shape its request asks for.
+fn answer(request: &Request<'_>, printed: &[u8]) -> Result<Answer, ProduceError> {
+    let answer = Evaluation::from_json(printed)
         .map(|evaluation| evaluation.answer)
-        .map_err(ProduceError::Answer)
+        .map_err(ProduceError::Answer)?;
+    if request.answered_by(&answer) {
+        Ok(answer)
+    } else {
+        Err(ProduceError::Unanswered(request.name()))
+    }
 }
 
 /// plans the composition, evaluates every selected project, and assembles the declarations.
@@ -261,9 +266,9 @@ fn compose(
     parallelism: usize,
 ) -> Result<Declarations, ProduceError> {
     let plan = match evaluator.evaluate(&Request::Plan {})? {
-        Printed::Answer(printed) => match answer(&printed)? {
+        Printed::Answer(printed) => match answer(&Request::Plan {}, &printed)? {
             Answer::Plan(plan) => plan,
-            Answer::Projects(_) => return Err(ProduceError::Unanswered(Asked::Plan)),
+            Answer::Projects(_) => unreachable!("an answer is held to its request's shape"),
         },
         // the plan reads no declaration, so its failure is the manifest's, and with no manifest
         // there's nothing to compose.
@@ -334,8 +339,8 @@ fn dependencies(entry: &Entry) -> impl Iterator<Item = &str> {
     }
     let items = match entry {
         Some(Evaluated::Value(declaration)) if declaration.factory => {
-            field(&declaration.value, "project")
-                .and_then(|project| field(project, "dependsOn"))
+            field(&declaration.value, names::PROJECT)
+                .and_then(|project| field(project, names::DEPENDS_ON))
                 .and_then(|depends| match depends {
                     Node::List { items } => Some(items.as_slice()),
                     _ => None,
@@ -567,12 +572,10 @@ fn read_batch(
     projects: Vec<Project>,
     printed: &[u8],
 ) -> Result<Vec<(String, Entry)>, ProduceError> {
-    let Answer::Projects(declarations) = answer(printed)? else {
-        return Err(ProduceError::Unanswered(Asked::Evaluate));
+    let declarations = match answer(&Request::Evaluate(&projects), printed)? {
+        Answer::Projects(declarations) => declarations,
+        Answer::Plan(_) => unreachable!("an answer is held to its request's shape"),
     };
-    if declarations.len() != projects.len() {
-        return Err(ProduceError::Unanswered(Asked::Evaluate));
-    }
     Ok(projects
         .into_iter()
         .zip(declarations)
@@ -590,22 +593,6 @@ fn find_program(name: &str, path: &OsString) -> Option<PathBuf> {
     std::env::split_paths(path)
         .map(|directory| directory.join(name))
         .find(|candidate| candidate.is_file())
-}
-
-/// what a request the layer didn't answer asked for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Asked {
-    Plan,
-    Evaluate,
-}
-
-impl fmt::Display for Asked {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Plan => "plan",
-            Self::Evaluate => "evaluate",
-        })
-    }
 }
 
 #[derive(Debug)]
@@ -626,7 +613,8 @@ pub enum ProduceError {
     /// writes nothing else.
     Answer(serde_json::Error),
     /// the layer answered a request with something other than what it asked for: a Shikumi bug.
-    Unanswered(Asked),
+    /// the layer answered the named request with something else.
+    Unanswered(String),
     Check(check::CheckError),
     Document(RegistryError),
 }
@@ -642,7 +630,9 @@ impl fmt::Display for ProduceError {
                 f.write_str("no nix-instantiate on PATH to evaluate declarations with")
             }
             Self::Root { root, error } => write!(f, "opening {}: {error}", root.display()),
-            Self::NoManifest(root) => write!(f, "{} has no {MANIFEST} manifest", root.display()),
+            Self::NoManifest(root) => {
+                write!(f, "{} has no {} manifest", root.display(), MANIFEST.name)
+            }
             Self::NotUtf8(path) => write!(f, "{} isn't valid UTF-8", path.display()),
             Self::Spawn { program, error } => write!(f, "running {}: {error}", program.display()),
             Self::Answer(error) => write!(

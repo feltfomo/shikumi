@@ -17,9 +17,11 @@
   serialize,
   isProject,
   forced,
-  # what a project's declaration file is called with.
+  # what a project's declaration file is called with, and what the manifest is.
   arguments,
-  types,
+  manifestArguments,
+  # the file names the layer shares with the registry's Rust.
+  layer,
 }:
 let
   inherit (builtins)
@@ -34,7 +36,7 @@ let
     ;
 
   # the declaration file every listed directory holds.
-  declarationName = "project.nix";
+  declarationName = layer.declaration.name;
 
   # calls a file's function with the arguments it names, or with all of them when it names none.
   # a function that requires an argument nobody gives it stays a function, which the checker
@@ -59,7 +61,7 @@ let
   rootString = toString root;
   serialized = serialize rootString;
 
-  manifestValue = call { inherit types lib; } (import manifest);
+  manifestValue = call manifestArguments (import manifest);
 
   listed =
     if isAttrs manifestValue && isAttrs (forced (manifestValue.projects or null)) then

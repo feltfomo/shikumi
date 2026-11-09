@@ -65,8 +65,11 @@ graph LR
   the frame around every first forcing of a user's value. `produce.nix` owns the requests the
   producer can make and the frame that names a project in the evaluator's trace. `modules.nix` owns
   the module adapter. In the `shikumi-registry` crate, `check.rs` owns every judgement about a
-  declaration, `vocabulary.rs` owns what each type accepts and the declaration record itself,
-  `document.rs` owns the document's types, schema and the refusal, `render.rs` owns the text form of
+  declaration, `vocabulary.rs` owns what each type accepts and the one definition of each shape:
+  the declaration record, the manifest's fields and the field names they share. `document.rs` owns
+  the document's types, which are those records' serde shape with their descriptions, its schema
+  and the refusal. `layer.rs` owns what both halves name: each file the layer reads, the arguments
+  it's offered and the frames in a trace, written to `layer.json`, which the layer's Nix reads. `render.rs` owns the text form of
   findings, `failure.rs` owns reading an evaluator's error, the one place an evaluator's text is
   parsed, `evaluation.rs` owns the contract of each evaluation's answer, `produce.rs` owns the
   producer, which projects a composition holds and how they're evaluated, and `view.rs` owns the

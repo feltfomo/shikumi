@@ -26,8 +26,12 @@ contract_version!(
     0
 );
 
+/// a project as the document carries it: the serde shape of the vocabulary's
+/// [`vocabulary::document_project`], whose descriptions its schema takes. each extension
+/// namespace's value is exactly as the repository declared it, and Shikumi gives it no meaning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[schemars(transform = described::project)]
 pub struct Project {
     pub directory: RelativePath,
     pub summary: Text,
@@ -36,31 +40,87 @@ pub struct Project {
     pub steps: BTreeMap<Identifier, Step>,
     pub commands: BTreeMap<Identifier, Command>,
     pub services: BTreeMap<Identifier, Service>,
-    /// each namespace's value exactly as the repository declared it, checked against the schema
-    /// the repository supplied for it. Shikumi gives none of it a meaning.
     pub extensions: BTreeMap<Identifier, serde_json::Value>,
 }
 
 /// a step as the document carries it. its command line is declared and never copied here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = described::step)]
 pub struct Step {
     pub description: Text,
-    /// steps of the same project this one runs after when both run.
     pub after: Vec<Identifier>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = described::command)]
 pub struct Command {
     pub description: Text,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = described::service)]
 pub struct Service {
     pub description: Text,
     pub restart: Restart,
+}
+
+/// the schema's descriptions of each record the document carries, taken from the vocabulary, so a
+/// field's text is written once, for the reference page and the schema alike.
+mod described {
+    use std::collections::BTreeMap;
+
+    use schemars::Schema;
+
+    use crate::vocabulary::{self, Record, Type, names};
+
+    fn describe(schema: &mut Schema, record: &Record) {
+        let Some(properties) = schema
+            .get_mut("properties")
+            .and_then(|properties| properties.as_object_mut())
+        else {
+            return;
+        };
+        for (name, property) in properties {
+            let description = record.get(name).and_then(|field| field.description);
+            if let (Some(description), Some(property)) = (description, property.as_object_mut()) {
+                property.insert("description".to_owned(), description.into());
+            }
+        }
+    }
+
+    fn project_record() -> Record {
+        vocabulary::document_project(&BTreeMap::new())
+    }
+
+    // the record each entry of one of a project's attribute sets holds.
+    fn entry(field: &str) -> Record {
+        match project_record().get(field).map(|field| &field.ty) {
+            Some(Type::Attrs(element)) => match &**element {
+                Type::Record(record) => record.clone(),
+                _ => Record::default(),
+            },
+            _ => Record::default(),
+        }
+    }
+
+    pub(super) fn project(schema: &mut Schema) {
+        describe(schema, &project_record());
+    }
+
+    pub(super) fn step(schema: &mut Schema) {
+        describe(schema, &entry(names::STEPS));
+    }
+
+    pub(super) fn command(schema: &mut Schema) {
+        describe(schema, &entry(names::COMMANDS));
+    }
+
+    pub(super) fn service(schema: &mut Schema) {
+        describe(schema, &entry(names::SERVICES));
+    }
 }
 
 closed_set! {
@@ -492,6 +552,7 @@ mod tests {
 
     use super::*;
     use crate::contract::render_json;
+    use crate::vocabulary;
 
     const BASIC: &str = include_str!("../fixtures/basic/document.json");
 
@@ -534,6 +595,77 @@ mod tests {
         assert!(
             tracked == render_json(&schema()),
             "crates/registry/schema/registry.schema.json is stale; regenerate it with `shikumi registry schema`"
+        );
+    }
+
+    // every field of a vocabulary type, against the matching part of the published schema: a
+    // record's carried fields are its properties, no more and no fewer, and an attribute set's or
+    // a list's elements follow theirs. reports each place the two disagree.
+    fn disagreements(ty: &vocabulary::Type, schema: &Value, defs: &Value, at: &str) -> Vec<String> {
+        use vocabulary::Type;
+        let schema = match schema.get("$ref").and_then(Value::as_str) {
+            Some(reference) => &defs[reference.trim_start_matches("#/$defs/")],
+            None => schema,
+        };
+        let mut found = Vec::new();
+        match ty {
+            Type::Record(record) if !record.fields().is_empty() => {
+                let properties = schema["properties"]
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default();
+                for (name, field) in record.fields() {
+                    let path = format!("{at}.{name}");
+                    match (field.ty.carried(), properties.get(name)) {
+                        (true, Some(property)) => {
+                            found.extend(disagreements(&field.ty, property, defs, &path));
+                        }
+                        (true, None) => found.push(format!("{path} isn't in the schema")),
+                        (false, Some(_)) => found.push(format!(
+                            "{path} is in the schema, though the vocabulary never carries it"
+                        )),
+                        (false, None) => {}
+                    }
+                }
+                for name in properties.keys() {
+                    if record.get(name).is_none() {
+                        found.push(format!("{at}.{name} isn't in the vocabulary"));
+                    }
+                }
+            }
+            // a map keyed by a checked name is written with `patternProperties`, any other with
+            // `additionalProperties`.
+            Type::Attrs(element) => {
+                let entry = schema["patternProperties"]
+                    .as_object()
+                    .and_then(|patterns| patterns.values().next())
+                    .unwrap_or(&schema["additionalProperties"]);
+                found.extend(disagreements(element, entry, defs, at));
+            }
+            Type::List { element, .. } => {
+                found.extend(disagreements(element, &schema["items"], defs, at));
+            }
+            _ => {}
+        }
+        found
+    }
+
+    // the vocabulary is the one definition of what a project holds, and `Project` is its serde
+    // shape; this holds every field of one to the other, all the way down.
+    #[test]
+    fn the_document_holds_exactly_the_fields_the_vocabulary_defines() {
+        let schema = serde_json::to_value(schema()).unwrap();
+        let project = vocabulary::Type::Record(vocabulary::document_project(&BTreeMap::new()));
+        let found = disagreements(
+            &project,
+            &schema["$defs"]["Project"],
+            &schema["$defs"],
+            "project",
+        );
+        assert_eq!(found, Vec::<String>::new());
+        assert_eq!(
+            schema["$defs"]["Step"]["properties"]["after"]["description"],
+            "steps of the same project this one runs after when both run"
         );
     }
 

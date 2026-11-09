@@ -58,7 +58,8 @@ in
         nix-unit --eval-store "$TMPDIR/store" --option store "$TMPDIR/store" \
           --option allow-import-from-derivation false \
           ${tests}/tests/default.nix --argstr nixpkgs ${nixpkgs} \
-          --argstr homeManager ${pkgs.home-manager.src} --argstr vocabulary ${vocabulary}
+          --argstr homeManager ${pkgs.home-manager.src} --argstr vocabulary ${vocabulary} \
+          --argstr references ${references}
         touch $out
       '';
 

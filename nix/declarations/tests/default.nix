@@ -9,6 +9,8 @@
   homeManager,
   # what the vocabulary's constructors build for `vocabulary.nix`, tracked beside the checker.
   vocabulary,
+  # the registry crate's tracked references, which hold its copy of the layer table.
+  references,
 }:
 let
   lib = import (nixpkgs + "/lib");
@@ -580,4 +582,28 @@ in
       }).config.shikumi.projects.web;
     expectedError.type = "ThrownError";
   };
+
+  # the layer reads its own copy of the table the registry's Rust defines.
+  testTheLayerReadsTheRegistrysTable = {
+    expr = builtins.fromJSON (builtins.readFile ../layer.json);
+    expected = builtins.fromJSON (builtins.readFile (references + "/layer.json"));
+  };
+
+  # the files are offered exactly the arguments the layer table names, which the reference page and
+  # the checker's messages name too.
+  testEachFileIsOfferedTheArgumentsTheLayerTableNames =
+    let
+      layer = builtins.fromJSON (builtins.readFile ../layer.json);
+      composed = compose ./fixtures/arguments;
+    in
+    {
+      expr = {
+        manifest = read composed.manifest.value.fields.offered.value;
+        declaration = read composed.projects.app.value;
+      };
+      expected = {
+        manifest = layer.manifest.arguments;
+        declaration = layer.declaration.arguments;
+      };
+    };
 }

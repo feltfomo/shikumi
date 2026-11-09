@@ -4,15 +4,21 @@
 //! declaration record is a [`Type`] too, built in [`declaration`], so one vocabulary describes
 //! both, and the reference page is rendered from it.
 //!
-//! a repository can only name the public kinds. [`Type::Command`] has no constructor in
-//! `shikumi.lib.types` and isn't read from a schema here, because it skips the checks that keep a
-//! string out of the document: right for a command line Shikumi never copies, wrong for an
-//! extension value it always does.
+//! the manifest is described here too, by [`ManifestField`], so the checker, the names a misspelt
+//! field is matched against and the reference page all read the one definition of each. the names
+//! of the declaration record's fields are in [`names`], which the record and the checker both
+//! use.
+//!
+//! a repository can only name the public kinds. [`Type::Command`] and [`Type::Schema`] have no
+//! constructor in `shikumi.lib.types` and aren't read from a schema here: a command line skips the
+//! checks that keep a string out of the document, right for a command line Shikumi never copies
+//! and wrong for an extension value it always does, and a schema is the manifest's to declare.
 
 use std::collections::{BTreeMap, HashMap};
 
 use serde_json::Value;
 
+use crate::contract::RelativePath;
 pub use crate::contract::Scalar;
 use crate::declarations::Node;
 use crate::document::Restart;
@@ -30,6 +36,8 @@ pub enum Type {
     Record(Record),
     /// a command line: non-blank text that never reaches the document.
     Command,
+    /// a schema written with `shikumi.lib.types`, such as an extension namespace's.
+    Schema,
 }
 
 /// a record's fields in the order they're shown, and an index by name: a repository's
@@ -81,7 +89,33 @@ pub enum Presence {
     Optional,
     /// absent means this value, which is part of the schema Shikumi publishes. a repository's
     /// schema can't give one, since its values pass through exactly as written.
-    Default(Value),
+    Default(Empty),
+}
+
+/// the values a field can default to: Shikumi's records default only to nothing at all, so a
+/// default is never a value someone has to know was chosen for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Empty {
+    List,
+    Set,
+}
+
+impl Empty {
+    /// the default as the document carries it.
+    pub fn json(self) -> Value {
+        match self {
+            Self::List => Value::Array(Vec::new()),
+            Self::Set => Value::Object(serde_json::Map::new()),
+        }
+    }
+
+    /// the default as a Nix expression, for the reference page.
+    pub fn nix(self) -> &'static str {
+        match self {
+            Self::List => "[ ]",
+            Self::Set => "{ }",
+        }
+    }
 }
 
 impl Type {
@@ -153,7 +187,7 @@ impl Type {
     /// whether a checked value of this type goes into the registry document. a command line is
     /// checked like any other value and then left out, since the document has no field for it.
     pub fn carried(&self) -> bool {
-        !matches!(self, Self::Command)
+        !matches!(self, Self::Command | Self::Schema)
     }
 
     /// the type as the reference page names it, in `shikumi.lib.types`' own words.
@@ -162,6 +196,7 @@ impl Type {
             Self::Scalar(kind) => kind.tag().to_owned(),
             Self::Json => "json".to_owned(),
             Self::Command => "command line".to_owned(),
+            Self::Schema => "schema".to_owned(),
             Self::Enum(values) => {
                 let shown: Vec<String> = values.iter().map(|v| format!("`{v}`")).collect();
                 format!("one of {}", shown.join(", "))
@@ -193,6 +228,137 @@ fn string(node: &Node) -> Option<&str> {
     }
 }
 
+/// the names of the declaration record's fields, for the record and for every place that finds a
+/// field by name, so a field is named once.
+pub mod names {
+    pub const PROJECT: &str = "project";
+    pub const SUMMARY: &str = "summary";
+    pub const MAINTAINERS: &str = "maintainers";
+    pub const DEPENDS_ON: &str = "dependsOn";
+    pub const STEPS: &str = "steps";
+    pub const DESCRIPTION: &str = "description";
+    pub const EXEC: &str = "exec";
+    pub const AFTER: &str = "after";
+    pub const COMMANDS: &str = "commands";
+    pub const SERVICES: &str = "services";
+    pub const RESTART: &str = "restart";
+    pub const EXTENSIONS: &str = "extensions";
+    pub const DIRECTORY: &str = "directory";
+}
+
+/// a field of the manifest. this is the one definition of the manifest's shape: [`manifest`] is
+/// built from it, the checker matches each field the manifest sets against it, and the reference
+/// page renders it, so a field added here reaches all three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestField {
+    Projects,
+    Extensions,
+}
+
+impl ManifestField {
+    pub const ALL: &'static [Self] = &[Self::Projects, Self::Extensions];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Projects => "projects",
+            Self::Extensions => "extensions",
+        }
+    }
+
+    /// the field a manifest attribute's name is, if it's one.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|field| field.name() == name)
+    }
+
+    pub fn field(self) -> Field {
+        match self {
+            Self::Projects => field(
+                Type::Attrs(Box::new(Type::Scalar(Scalar::Path))),
+                Presence::Required,
+                "each project's directory, by project name",
+            ),
+            Self::Extensions => field(
+                Type::Attrs(Box::new(Type::Schema)),
+                empty_set(),
+                "the schema of each extension namespace, written with `shikumi.lib.types`",
+            ),
+        }
+    }
+}
+
+/// a project as the registry document carries it: its declaration record with the fields of
+/// `project` lifted to the top, and its directory beside them. document.rs's `Project` is this
+/// record's serde shape, which a test holds to it, and its schema's descriptions are these.
+pub fn document_project(extensions: &BTreeMap<String, Type>) -> Record {
+    let Type::Record(declared) = declaration(extensions) else {
+        unreachable!("the declaration is a record");
+    };
+    let mut fields = vec![(
+        names::DIRECTORY.to_owned(),
+        field(
+            Type::Scalar(Scalar::Path),
+            Presence::Required,
+            "the project's directory, as the manifest lists it",
+        ),
+    )];
+    for (name, field) in declared.fields() {
+        match (name.as_str(), &field.ty) {
+            (names::PROJECT, Type::Record(project)) => {
+                fields.extend(project.fields().iter().cloned())
+            }
+            _ => fields.push((name.clone(), field.clone())),
+        }
+    }
+    Record::new(fields)
+}
+
+/// a declaration's checked value reshaped as [`document_project`] describes it, for the document.
+pub fn document_value(value: Value, directory: &RelativePath) -> Value {
+    let Value::Object(mut fields) = value else {
+        return value;
+    };
+    if let Some(Value::Object(project)) = fields.remove(names::PROJECT) {
+        fields.extend(project);
+    }
+    fields.insert(
+        names::DIRECTORY.to_owned(),
+        Value::String(directory.as_str().to_owned()),
+    );
+    Value::Object(fields)
+}
+
+/// every definition the reference page renders as a table, in the page's order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Definition {
+    Declaration,
+    Manifest,
+}
+
+impl Definition {
+    pub const ALL: &'static [Self] = &[Self::Declaration, Self::Manifest];
+
+    /// the definition itself, with no extension schemas.
+    pub fn record(self) -> Type {
+        match self {
+            Self::Declaration => declaration(&BTreeMap::new()),
+            Self::Manifest => Type::Record(manifest()),
+        }
+    }
+}
+
+/// what stands for any identifier in a field's path on the reference page.
+pub const NAME_PLACEHOLDER: &str = "<name>";
+
+/// what the manifest may say.
+pub fn manifest() -> Record {
+    Record::new(
+        ManifestField::ALL
+            .iter()
+            .map(|field| (field.name().to_owned(), field.field()))
+            .collect(),
+    )
+}
+
 fn field(ty: Type, presence: Presence, description: &'static str) -> Field {
     Field {
         ty,
@@ -211,11 +377,11 @@ fn record(fields: Vec<(&'static str, Field)>) -> Type {
 }
 
 fn empty_list() -> Presence {
-    Presence::Default(Value::Array(Vec::new()))
+    Presence::Default(Empty::List)
 }
 
 fn empty_set() -> Presence {
-    Presence::Default(Value::Object(serde_json::Map::new()))
+    Presence::Default(Empty::Set)
 }
 
 fn identifiers() -> Type {
@@ -245,11 +411,11 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
     };
     record(vec![
         (
-            "project",
+            names::PROJECT,
             field(
                 record(vec![
                     (
-                        "summary",
+                        names::SUMMARY,
                         field(
                             Type::Scalar(Scalar::Text),
                             Required,
@@ -257,7 +423,7 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
                         ),
                     ),
                     (
-                        "maintainers",
+                        names::MAINTAINERS,
                         field(
                             Type::List {
                                 element: Box::new(Type::Scalar(Scalar::Text)),
@@ -268,7 +434,7 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
                         ),
                     ),
                     (
-                        "dependsOn",
+                        names::DEPENDS_ON,
                         field(
                             identifiers(),
                             empty_list(),
@@ -281,13 +447,13 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
             ),
         ),
         (
-            "steps",
+            names::STEPS,
             field(
                 Type::Attrs(Box::new(record(vec![
-                    ("description", description()),
-                    ("exec", exec()),
+                    (names::DESCRIPTION, description()),
+                    (names::EXEC, exec()),
                     (
-                        "after",
+                        names::AFTER,
                         field(
                             identifiers(),
                             empty_list(),
@@ -300,24 +466,24 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
             ),
         ),
         (
-            "commands",
+            names::COMMANDS,
             field(
                 Type::Attrs(Box::new(record(vec![
-                    ("description", description()),
-                    ("exec", exec()),
+                    (names::DESCRIPTION, description()),
+                    (names::EXEC, exec()),
                 ]))),
                 empty_set(),
                 "entry points on the shell's path, by a name unique across the composition",
             ),
         ),
         (
-            "services",
+            names::SERVICES,
             field(
                 Type::Attrs(Box::new(record(vec![
-                    ("description", description()),
-                    ("exec", exec()),
+                    (names::DESCRIPTION, description()),
+                    (names::EXEC, exec()),
                     (
-                        "restart",
+                        names::RESTART,
                         field(
                             Type::Enum(
                                 Restart::ALL
@@ -335,7 +501,7 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
             ),
         ),
         (
-            "extensions",
+            names::EXTENSIONS,
             field(
                 Type::Record(Record::new(
                     extensions
@@ -422,13 +588,30 @@ mod tests {
     }
 
     // `crates/registry/fixtures/vocabulary.json` is what the Nix constructors build for the schema
-    // in `nix/declarations/tests/vocabulary.nix`, which uses every one of them; the `declarations`
-    // check holds the Nix side to it, and this test holds the reader to it, so the two halves of the
-    // vocabulary can't drift apart.
+    // in `nix/declarations/tests/vocabulary.nix`, which uses every one of them, and the names
+    // `shikumi.lib.types` has; the `declarations` check holds the Nix side to it, and these tests
+    // hold the reader and the reference page to it, so the two halves can't drift apart.
+    fn tracked() -> Value {
+        serde_json::from_str(include_str!("../fixtures/vocabulary.json")).unwrap()
+    }
+
+    #[test]
+    fn the_reference_names_every_constructor_nix_has_and_no_other() {
+        let nix: Vec<String> = serde_json::from_value(tracked()["names"].clone()).unwrap();
+        let mut documented: Vec<String> = Scalar::ALL
+            .iter()
+            .map(|scalar| scalar.tag().to_owned())
+            .chain(CONSTRUCTORS.iter().map(|(constructor, _)| {
+                constructor.split(' ').next().unwrap_or_default().to_owned()
+            }))
+            .collect();
+        documented.sort();
+        assert_eq!(documented, nix);
+    }
+
     #[test]
     fn every_constructor_reads_as_the_type_it_builds() {
-        let built: Value =
-            serde_json::from_str(include_str!("../fixtures/vocabulary.json")).unwrap();
+        let built = tracked()["schema"].clone();
         let read = Type::from_schema(&node(&built)).unwrap();
         let expected = Type::Record(Record::new(vec![
             (

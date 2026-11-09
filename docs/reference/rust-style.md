@@ -1,8 +1,9 @@
 # Rust style
 
-How Rust in this repository is written: the lints the gate holds, manifests, errors, contracts,
-types, unsafe code, concurrency and tests. Read it with [the writing guide](../writing.md#code-comments),
-which owns comments, and [contributing](../contributing.md#dependencies), which owns adding a crate.
+How Rust in this repository is written: the lints the gate holds, manifests, errors, contracts, one
+definition per shape, types, unsafe code, concurrency and tests. Read it with
+[the writing guide](../writing.md#code-comments), which owns comments, and
+[contributing](../contributing.md#dependencies), which owns adding a crate.
 
 Every rule here is enforced by the gate or followed by every crate in the tree. The gate settles
 layout and lints; this page covers what it can't check.
@@ -64,6 +65,24 @@ this:
 - A rule that spans fields lives in a `TryFrom<Raw…>` conversion: serde reads the raw shape, and the
   public type can only be built through the check.
 - A contract records its version in the document, as a type that rejects any other version.
+
+## One definition per shape
+
+A shape that's checked, rendered, documented or named in a message has one definition in code: a
+typed record, an enum or a table of typed entries. The checker, the help text that lists valid
+names, the generated schemas and the generated pages all read it. In the registry crate that's
+`vocabulary.rs`: the declaration record, the manifest's fields as `ManifestField`, and the field
+names in `names`.
+
+- A hand-written table in a generated page, a match on field names as string literals, or a list of
+  valid names that repeats a definition held elsewhere is a defect, even when every copy agrees
+  today, because nothing fails when they drift.
+- Handle a closed set with an exhaustive `match` on its enum, so a new entry fails the build until
+  every place that handles it does.
+- A drift test on a generated file proves only that the file matches its generator. Back the
+  generator with a test that walks the definition and fails when the output lacks an entry, as the
+  declarations reference's tests do.
+- When you find one restatement, look through the whole crate for the rest before fixing any.
 
 ## Types and visibility
 
