@@ -59,6 +59,9 @@ system, and enable systemd in WSL, which Nix's multi-user daemon needs.
 | Schema with required fields, closed enumerations, typed paths and globs | Current  |
 | Checking in one pass, each finding with a code, path and source position | Current |
 | Findings rendered against the user's file, or as JSON             | Current         |
+| Evaluation failures as findings at the user's code, by kind       | Current         |
+| Each project evaluated on its own, so one failure leaves the rest checked | Current |
+| A failure only inside Shikumi's own Nix reported as a Shikumi bug | Current         |
 | Extension namespace with the repository's own schema              | Current         |
 | Module adapter for NixOS and Home Manager                         | Current         |
 | Module adapter for flake-parts                                    | Current; unverified against flake-parts itself |
@@ -168,6 +171,30 @@ error[unknown-reference]: `project.dependsOn[1]` names `nowhere`, which isn't a 
   composition holds one project and every project it depends on, transitively, and never reads any
   other declaration.
 - **The remainder** is the scope of every source outside the listed directories.
+- **Evaluation failures.** A declaration that Nix can't evaluate, because it doesn't parse, uses a
+  variable nothing defines, calls something that isn't a function, throws, fails an assertion or
+  holds text that isn't valid UTF-8, comes back as that project's finding. The finding names the
+  kind, sits at the innermost place in the user's own files the evaluator's trace passed through,
+  or at the project's file where the evaluator gives none, and lists the user's other places on
+  the way as notes. Shikumi's own frames and nixpkgs' are
+  left out. Text that isn't valid UTF-8 is located to its field. A failure Shikumi doesn't recognize
+  keeps the evaluator's own message, and one whose frames lie only in Shikumi's Nix is reported as a
+  bug in Shikumi, with those frames for the report. Each project is evaluated on its own terms, so
+  every other project is still checked in the same run, its findings beside the failure, and a
+  focused composition gives each of its projects what the global one gives. A manifest
+  that fails to evaluate is the one finding, since every project's directory is its to say. The
+  kind, the location and the user's frames are the same on CppNix, Determinate Nix and Lix; the
+  evaluator's own wording isn't.
+
+```text
+error[thrown]: evaluation threw an error: summary is required
+ --> projects/thrown/helpers.nix:2:49
+  |
+2 |   required = name: value: if value == null then throw "${name} is required" else value;
+  |                                                 ^^^^^
+note: reached from here
+ --> projects/thrown/project.nix:7:15
+```
 
 People author declarations in Nix, and the real Nix evaluator runs them. `shikumi.lib` takes nixpkgs'
 `lib` from whoever imports it, and the `shikumi` package evaluates with the nixpkgs its flake pins.
@@ -187,8 +214,10 @@ Pinning that nixpkgs in Shikumi's own [lock](#lock) is an accepted target.
 - **The document** is JSON with a published schema,
   [`registry.schema.json`](../../crates/registry/schema/registry.schema.json), and a major and minor
   version. A reader takes only the version it was built for, and refuses an unknown field. The
-  serialized declarations the checker reads are a contract of their own, with the schema
-  [`declarations.schema.json`](../../crates/registry/schema/declarations.schema.json).
+  serialized declarations the checker reads, failures included, are a contract of their own, with
+  the schema [`declarations.schema.json`](../../crates/registry/schema/declarations.schema.json),
+  and so is each evaluation's answer, with
+  [`evaluation.schema.json`](../../crates/registry/schema/evaluation.schema.json).
 - **What it holds.** Each project's directory, summary, maintainers, dependencies, steps, commands,
   services and extension metadata, the composition's focus, the remainder, and the diagnostics. A
   step's or command's command line is declared and never copied in.
@@ -204,11 +233,11 @@ Pinning that nixpkgs in Shikumi's own [lock](#lock) is an accepted target.
 - **Limits.** A declaration that reads a file by a plain path the evaluator can't tie to a build
   isn't refused. It can read a store path whose context it stripped, a file Git doesn't track or one
   outside the repository, `.git`, a directory listing of the checkout, a directory reached through a
-  symlink, the clock, or the host's system through `builtins.currentSystem`. It can also carry a
+  symlink, the clock, the host's system through `builtins.currentSystem`, or, on CppNix and
+  Determinate Nix, root's channels through the search path, such as `<nixpkgs>`. It can also carry a
   value derived from the repository's location, such as its parent directory or its name. So its
   document can depend on the host or on the worktree. Both rows wait on the context cache, which
-  evaluates in pure mode from a store copy of exactly the tracked files a declaration may import. A
-  string that isn't valid UTF-8 stops evaluation instead of becoming a finding.
+  evaluates in pure mode from a store copy of exactly the tracked files a declaration may import.
 - **No state in the checkout.** Producing it writes nothing there.
 - **The viewer** prints the project list, one project's detail, the document, its findings, the
   declarations as Shikumi read them, the schemas and the declarations reference, run from the
@@ -451,7 +480,10 @@ The gate's `nextest` check runs every workspace test, the checker's included. It
 check runs the declaration layer's nix-unit tests against fixture repositories and in each module
 system. The `registry-no-builds-*` checks, one per Nix implementation, hold the declarations each
 implementation serializes from them to one tracked reference, and the checker's tests hold what
-those declarations give: the document and the rendered findings. `registry-cli` and
+those declarations give: the document and the rendered findings. For a fixture whose declarations
+fail to evaluate, each implementation's failures have to classify as one tracked reference, every
+project evaluated beside the others on one core has to match it evaluated alone, and a fault
+planted in a copy of the layer has to come back as a Shikumi bug. `registry-cli` and
 `registry-worktrees` run the packaged `shikumi` on them, and `declarations-reference` holds the
 generated reference page to the vocabulary, as [the root AGENTS.md](../../AGENTS.md#gates) lists.
 

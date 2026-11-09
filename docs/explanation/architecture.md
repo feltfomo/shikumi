@@ -47,11 +47,12 @@ The toolchain context and shell environments are targets.
 
 ```mermaid
 graph LR
-  manifest["shikumi.nix<br/>manifest"] --> compose["compose.nix"]
+  manifest["shikumi.nix<br/>manifest"] --> compose["compose.nix<br/>plan and read"]
   decl["project.nix<br/>shikumi.project { … }"] --> compose
   compose --> serialize["serialize.nix<br/>values and positions"]
-  produce["shikumi-registry<br/>producer"] -->|"nix-instantiate,<br/>dummy:// store"| serialize
-  serialize -->|"shikumi.declarations"| checker["checker<br/>(Rust)"]
+  produce["shikumi-registry<br/>producer"] -->|"one plan, then batches,<br/>nix-instantiate, dummy://"| compose
+  serialize -->|"shikumi.evaluation<br/>or an error"| produce
+  produce -->|"shikumi.declarations,<br/>failures included"| checker["checker<br/>(Rust)"]
   checker --> doc["registry document"]
   doc --> refusal["Registry::try_from<br/>the refusal"]
   refusal --> viewer["viewer"]
@@ -60,14 +61,19 @@ graph LR
 - **Owners.** `factory.nix` owns `shikumi.project`, which marks a plain record as a declaration and
   changes nothing else. `vocabulary.nix` owns `shikumi.lib.types`, whose constructors only build
   data. `serialize.nix` owns turning any value into a tagged tree with source positions.
-  `compose.nix` owns the manifest and which declaration files a composition reads. `modules.nix` owns
+  `compose.nix` owns the manifest and which declaration files a composition reads. `forced.nix` owns
+  the frame around every first forcing of a user's value. `produce.nix` owns the requests the
+  producer can make and the frame that names a project in the evaluator's trace. `modules.nix` owns
   the module adapter. In the `shikumi-registry` crate, `check.rs` owns every judgement about a
   declaration, `vocabulary.rs` owns what each type accepts and the declaration record itself,
   `document.rs` owns the document's types, schema and the refusal, `render.rs` owns the text form of
-  findings, and `produce.rs` and `view.rs` own the producer and the viewer. The `shikumi` crate in
-  `crates/cli/` only parses arguments and lists subcommands.
-- **Entry point.** `shikumi.lib.compose { root; manifest; focus; }` is pure: it reads the manifest,
-  imports each composed project's declaration, and returns the serialized declarations. nix-unit
+  findings, `failure.rs` owns reading an evaluator's error, the one place an evaluator's text is
+  parsed, `evaluation.rs` owns the contract of each evaluation's answer, `produce.rs` owns the
+  producer, which projects a composition holds and how they're evaluated, and `view.rs` owns the
+  viewer. The `shikumi` crate in `crates/cli/` only parses arguments and lists subcommands.
+- **Entry point.** `shikumi.lib.compose { root; manifest; }` is pure: it gives the serialized
+  manifest, each listed project's declaration file, and `read`, which serializes one project from
+  its file without reading the manifest again, so a caller can evaluate each project apart. nix-unit
   tests call it directly, with no CLI.
 - **Plain records, no module system.** `shikumi.project` takes a plain attribute set, a flat set of
   small records, and returns it marked as a declaration and otherwise unchanged, so the source
@@ -81,9 +87,10 @@ graph LR
   checker as written, tagged with what kind of value it was and with the position of every
   attribute, so a mistake Nix can still represent becomes a finding rather than an evaluation error
   that would hide the others. Only what Nix can't get past, such as a syntax error or a `throw`,
-  stops evaluation. The checker checks each declaration against the declaration record and the
-  repository's extension schemas, then applies the rules across projects, and collects every
-  finding with a stable code, the field's path and its location.
+  stops a declaration's evaluation, and then only that project's. The checker checks each
+  declaration against the declaration record and the repository's extension schemas, then applies
+  the rules across projects, and collects every finding with a stable code, the field's path and its
+  location.
 - **The vocabulary is data.** `shikumi.lib.types` builds tagged attribute sets that serialize like
   any value, so a repository's extension schema reaches the checker the same way its declarations
   do. The checker reads it into the same type model its own declaration record is written in, and
@@ -109,13 +116,33 @@ graph LR
   `Registry::try_from` is the only way the Rust side gets a registry, and it refuses a document with
   a diagnostic, an unknown field or another version. Every Rust entry point goes through it, so each
   refuses the same declarations.
-- **Producing.** The producer runs the host's `nix-instantiate` on `produce.nix` against the
-  `dummy://` store, which holds nothing and accepts nothing, reads the serialized declarations
-  through their schema, and runs the checker. Import-from-derivation, `builtins.exec`, plugins and
-  experimental features are off on the command line, `nix-path` is empty, and the child gets no
-  environment at all. Every read of a build output through the evaluator fails there, whatever the
-  host's store holds, and nothing in the caller's environment, such as `PWD`, reaches a declaration.
-  It needs no daemon and no experimental feature on any implementation.
+- **Producing.** The producer runs the host's `nix-instantiate` on `produce.nix` once to plan the
+  composition, which reads the manifest and names each project's declaration file and reads no
+  declaration, then evaluates the projects in batches, at least four for each core the process may
+  use and none of more than 64 projects, as many at once as it has cores. Each answer is read
+  through its schema on Rayon's pool as it arrives, and the assembled declarations go to the
+  checker. One function builds every evaluation's command line: the `dummy://` store, which holds
+  nothing and accepts nothing; import-from-derivation, `builtins.exec`, plugins and experimental
+  features off; `nix-path` set empty; every frame of the trace in the plain format; no environment
+  at all, and `/` as the working directory. Every read of a build output through the evaluator fails
+  there, whatever the host's store holds, and nothing in the caller's environment, such as `PWD`,
+  reaches a declaration. An empty `nix-path` empties the search path on Lix only: CppNix and
+  Determinate Nix always add root's channels to it unless evaluation is restricted or pure, so a
+  declaration there can read `<nixpkgs>` or `<nixos>` from the host, the known gap under
+  [Invariants](#invariants). It needs no daemon and no experimental feature on any implementation.
+- **Isolation.** A batch that fails names its project in the trace, by the frame `produce.nix` puts
+  around every evaluation of a declaration. That project gets the failure, and the projects before
+  and after it are evaluated again, without it, in batches of their own. A failure no frame names,
+  such as an evaluator that's killed, halves its batch until it's down to one project. Evaluation is
+  pure and a failed evaluator leaves nothing behind, so every project comes out as it would
+  evaluated alone. A focused composition is evaluated the same way, in rounds: the focused project,
+  then the listed projects its serialized `dependsOn` names, and so on, so a failed dependency is
+  that project's finding and the focused project is still checked, each as the global composition
+  gives it. The evaluator processes belong to the run: each is started and reaped by one of the
+  run's scoped threads, no batch starts after an error, and Ctrl-C reaches them through the
+  terminal's process group. A `shikumi` killed any other way leaves its running evaluators to finish
+  their batch, at most 64 declarations, and exit, or, for a declaration that never terminates, to
+  run until they're killed too.
 - **Toolchain context.** The store paths and settings a backend needs to write `.drv` files: compiler,
   linker and builder paths, base environment, system and flags. It's small and changes only when the
   lock or a declaration changes. Accepted target.
@@ -128,12 +155,31 @@ graph LR
   value that refers to itself or shares one value many times becomes a finding at that field rather
   than an endless walk. The checker visits each serialized value once. Across projects it sorts the
   manifest's directories once for overlaps, walks the dependency graph and each project's step graph
-  once for loops, and keeps one map per name space for duplicates. A
-  focused composition reads only its project's dependency closure. Nothing per compile unit goes
-  through Nix.
-- **Failure.** A finding is data, and the producer exits with every finding. An evaluation error, such
-  as a declaration that doesn't parse or one that reads a build output, stops the producer with the
-  evaluator's message.
+  once for loops, and keeps one map per name space for duplicates. Each project is checked on its
+  own on Rayon's pool, and the findings keep name order. A focused composition reads only its
+  project's dependency closure. Isolation keeps the evaluation linear, since a batch reads its
+  declaration files without the manifest and holds at most 64 projects. A failure a frame places in
+  its project costs at most one batch and two evaluator starts of about twenty milliseconds: a
+  project that evaluated is evaluated at most twice, once in the batch that failed after it and once
+  in the batch of those before the failure. A failure no frame places halves its batch down to its
+  project, so it costs about two batches and thirteen starts, and a project beside it is evaluated
+  up to seven times. Nothing per compile unit goes through Nix.
+- **Failure.** A finding is data, and the producer exits with every finding. A declaration that
+  fails to evaluate is a finding too. `failure.rs` reads the evaluator's error under `--show-trace`,
+  which CppNix, Determinate Nix and Lix print in one shape: it names the kind from the evaluator's
+  message, and from the frame a `throw` adds before reading a message the user wrote, so a thrown
+  message can't pass for another kind. It splits the frames by file into the user's, Shikumi's and
+  everyone else's, such as nixpkgs' `lib`. The finding sits at the innermost frame in the user's
+  files, with the user's other frames as notes, or at the project's file where the evaluator gives
+  no position there, and the rest are hidden. The layer forces every value a user wrote inside a
+  frame of its own, so a failure inside that frame is the user's even where the evaluator places it
+  in Shikumi's code or nowhere. A failure is a Shikumi bug only when it never passed through the
+  user's files and Shikumi's own code ran where it happened, outside every such frame or called from
+  inside one; it's reported with Shikumi's frames for the report. Text that isn't valid UTF-8 fails
+  only as it's written out, so its project is evaluated once more with each string written under a
+  frame that names its field. A message `failure.rs` doesn't recognize keeps its kind unrecognized
+  and the evaluator's words. A manifest that fails to evaluate is the one finding, since it says
+  where every project is.
 
 ## The core
 
@@ -486,15 +532,17 @@ accepted targets like the rest of the page, except those marked current.
 | An asserted output is never shared until a sandboxed build confirms it | [provenance](#provenance) | the push path's refusal |
 | Daemon operations work as an untrusted user | [store transport](#store-transport) | a run as an untrusted test user on every implementation, through each transport; current for adding `.drv` files and sources, building, reading NARs, indirect roots and collecting garbage |
 | A worktree never has two supervisors or a lost service | [service supervisor](#service-supervisor) | the four lifetime tests |
-| Every Nix implementation serializes the same declarations and yields the same findings, for declarations that don't inspect the evaluator | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, which hold each implementation's serialized declarations for every fixture to one tracked reference, and the registry crate's tests, which hold the document and the rendered findings those declarations give; current |
+| Every Nix implementation serializes the same declarations and yields the same findings, for declarations that don't inspect the evaluator | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, which hold each implementation's serialized declarations for every fixture, and its classified evaluation failures, to one tracked reference, and the registry crate's tests, which hold the document and the rendered findings those declarations give; current |
+| A project's declaration comes out the same evaluated beside others as evaluated alone | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, which compare every project of a failing fixture on one core with the same project focused on, and the producer's tests over every mix of failures; current |
 | No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, one per implementation, which plant output reads and a `builtins.exec` the producer has to refuse on every implementation; current, with the known gap below |
 | The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | the checker refusing a store reference or the repository's location, and the `registry-worktrees` gate check, which compares two worktrees and plants a leak it has to catch; current, with the known gap below |
 
 **Known gap in the last two rows.** A declaration can read a file by a plain path that carries no
 store context: a store path whose context it stripped, an untracked file or one outside the
 repository, `.git`, a directory listing of the checkout, a directory reached through a symlink, or
-the clock, or the host's system through `builtins.currentSystem`. It can also carry a value derived
-from the repository's location, such as its parent directory. Its document can then depend on the
-host or the worktree, and no check plants such a read beyond the worktree's name. The gap is owned
-by [the context cache](#context-cache), whose evaluation from a store copy of exactly the keyed files
-makes pure evaluation possible.
+the clock, or the host's system through `builtins.currentSystem`, and on CppNix and Determinate Nix
+root's channels through the search path, such as `<nixpkgs>`. It can also carry a value derived from
+the repository's location, such as its parent directory. Its document can then depend on the host or
+the worktree, and no check plants such a read beyond the worktree's name. The gap is owned by [the
+context cache](#context-cache), whose evaluation from a store copy of exactly the keyed files makes
+pure evaluation possible.
