@@ -2,6 +2,7 @@
 //! stdin, NUL-separated: the flake check lists its source tree, which is exactly what Git tracks,
 //! and a developer pipes `git ls-files -z`. both run the same code over the same kind of list.
 
+mod history;
 mod links;
 mod names;
 
@@ -11,13 +12,21 @@ use std::io::{self, Read};
 use std::process::ExitCode;
 use std::thread;
 
-const USAGE: &str = "usage: repo-check <links|names> < NUL-separated tracked paths\n       \
+/// how every check reads Markdown, so the links check and the history check see the same document.
+const MARKDOWN: pulldown_cmark::Options = pulldown_cmark::Options::ENABLE_TABLES
+    .union(pulldown_cmark::Options::ENABLE_FOOTNOTES)
+    .union(pulldown_cmark::Options::ENABLE_STRIKETHROUGH)
+    .union(pulldown_cmark::Options::ENABLE_TASKLISTS);
+
+const USAGE: &str = "usage: repo-check <links|names|history> < NUL-separated tracked paths\n       \
                      repo-check digest < name";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
     Links,
     Names,
+    /// history markers in the product docs.
+    History,
     /// prints the digest line for a name to add to the private-name list.
     Digest,
 }
@@ -28,6 +37,7 @@ impl Command {
             [command] => match command.as_str() {
                 "links" => Some(Self::Links),
                 "names" => Some(Self::Names),
+                "history" => Some(Self::History),
                 "digest" => Some(Self::Digest),
                 _ => None,
             },
@@ -99,6 +109,7 @@ fn main() -> ExitCode {
         Command::Digest => return digest(),
         Command::Links => tracked_paths().and_then(|paths| check_links(&paths)),
         Command::Names => tracked_paths().and_then(|paths| check_names(&paths)),
+        Command::History => tracked_paths().and_then(|paths| check_history(&paths)),
     };
     match findings {
         Ok(findings) if findings.is_empty() => ExitCode::SUCCESS,
@@ -146,6 +157,16 @@ fn check_names(paths: &[String]) -> io::Result<Vec<Finding>> {
         let contents = std::fs::read(path)
             .map_err(|e| io::Error::new(e.kind(), format!("reading {path}: {e}")))?;
         Ok(names::check(&matcher, path, &contents))
+    });
+    flatten(per_file)
+}
+
+fn check_history(paths: &[String]) -> io::Result<Vec<Finding>> {
+    let pages: Vec<&String> = paths.iter().filter(|p| history::applies(p)).collect();
+    let per_file = parallel_map(&pages, |path| {
+        let contents = std::fs::read(path)
+            .map_err(|e| io::Error::new(e.kind(), format!("reading {path}: {e}")))?;
+        Ok(history::check(path, &contents))
     });
     flatten(per_file)
 }
@@ -229,6 +250,7 @@ mod tests {
         assert_eq!(parse(&["links"]), Some(Command::Links));
         assert_eq!(parse(&["names"]), Some(Command::Names));
         assert_eq!(parse(&["digest"]), Some(Command::Digest));
+        assert_eq!(parse(&["history"]), Some(Command::History));
         assert_eq!(parse(&["link"]), None);
         assert_eq!(parse(&[]), None);
         assert_eq!(parse(&["links", "names"]), None);
