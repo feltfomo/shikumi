@@ -21,6 +21,7 @@ shikumi-outputs = { path = "crates/outputs" }
 shikumi-registry = { path = "crates/registry" }
 shikumi-transport = { path = "crates/transport" }
 tempfile = "3.27"
+unicode-width = "0.2"
 # one runtime per process, as the core will run; only the parts the store transport uses.
 tokio = { version = "1.54", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync"] }
 

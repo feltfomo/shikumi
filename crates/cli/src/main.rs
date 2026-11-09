@@ -20,17 +20,19 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     #[command(
-        about = "Read the registry document: the project list, one project, the document or its schema"
+        about = "Read the registry: the project list, one project, the document, its findings or its schemas"
     )]
     Registry(shikumi_registry::view::RegistryArgs),
 }
 
 fn run(command: Command) -> Result<(), String> {
     match command {
-        Command::Registry(args) => {
-            shikumi_registry::view::run(&args, &mut std::io::stdout().lock())
-                .map_err(|error| error.to_string())
-        }
+        Command::Registry(args) => shikumi_registry::view::run(
+            &args,
+            &mut std::io::stdout().lock(),
+            &mut std::io::stderr().lock(),
+        )
+        .map_err(|error| error.to_string()),
     }
 }
 
@@ -62,6 +64,10 @@ mod tests {
             &["shikumi", "registry", "show", "web", "--root", "repo"],
             &["shikumi", "registry", "document", "--focus", "web"],
             &["shikumi", "registry", "schema"],
+            &["shikumi", "registry", "schema", "declarations"],
+            &["shikumi", "registry", "check", "--format", "json"],
+            &["shikumi", "registry", "declarations", "--root", "repo"],
+            &["shikumi", "registry", "reference"],
         ] {
             Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
         }

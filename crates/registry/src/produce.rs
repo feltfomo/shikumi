@@ -1,5 +1,6 @@
 //! producing the registry document: evaluating the declaration layer through the host's
-//! `nix-instantiate` and reading what it prints through the shared refusal.
+//! `nix-instantiate`, reading the declarations it serializes, checking them, and handing the
+//! document to the shared refusal.
 //!
 //! the evaluation can't build or read a build's output through the evaluator. it runs against
 //! `dummy://`, a store that holds nothing and accepts nothing, so every derivation output it would
@@ -19,7 +20,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::document::{Identifier, Registry, RegistryError};
+use crate::check;
+use crate::declarations::Declarations;
+use crate::document::{Document, Identifier, Registry, RegistryError};
 
 /// the manifest's file name at the repository root.
 pub const MANIFEST: &str = "shikumi.nix";
@@ -68,6 +71,26 @@ impl Producer {
         root: &Path,
         focus: Option<&Identifier>,
     ) -> Result<Registry, ProduceError> {
+        Registry::try_from(self.document(root, focus)?).map_err(ProduceError::Document)
+    }
+
+    /// the document the checker built, findings included, before the refusal.
+    pub fn document(
+        &self,
+        root: &Path,
+        focus: Option<&Identifier>,
+    ) -> Result<Document, ProduceError> {
+        let (declarations, root) = self.declarations(root, focus)?;
+        check::check(&declarations, &utf8(&root)?).map_err(ProduceError::Check)
+    }
+
+    /// the declarations as the declaration layer serialized them, and the canonical root they
+    /// were evaluated from.
+    pub fn declarations(
+        &self,
+        root: &Path,
+        focus: Option<&Identifier>,
+    ) -> Result<(Declarations, PathBuf), ProduceError> {
         let root = std::fs::canonicalize(root).map_err(|error| ProduceError::Root {
             root: root.to_owned(),
             error,
@@ -90,18 +113,15 @@ impl Producer {
                     .to_owned(),
             });
         }
-        Registry::from_json(&output.stdout).map_err(ProduceError::Document)
+        let declarations =
+            Declarations::from_json(&output.stdout).map_err(ProduceError::Declarations)?;
+        Ok((declarations, root))
     }
 
     // TODO: evaluate in pure mode from the context cache's store copy of exactly the keyed files,
     // once the context cache exists. until then a declaration can read a store path whose context
     // it stripped, an untracked file, `.git` or the clock, and the document can depend on them.
     fn command(&self, root: &Path, focus: Option<&Identifier>) -> Result<Command, ProduceError> {
-        let utf8 = |path: &Path| {
-            path.to_str()
-                .map(str::to_owned)
-                .ok_or_else(|| ProduceError::NotUtf8(path.to_owned()))
-        };
         let mut command = Command::new(&self.nix_instantiate);
         command
             .args(["--eval", "--strict", "--json"])
@@ -128,6 +148,12 @@ impl Producer {
     }
 }
 
+fn utf8(path: &Path) -> Result<String, ProduceError> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| ProduceError::NotUtf8(path.to_owned()))
+}
+
 fn find_program(name: &str, path: &OsString) -> Option<PathBuf> {
     std::env::split_paths(path)
         .map(|directory| directory.join(name))
@@ -138,11 +164,24 @@ fn find_program(name: &str, path: &OsString) -> Option<PathBuf> {
 pub enum ProduceError {
     Unset(&'static str),
     NoEvaluator,
-    Root { root: PathBuf, error: io::Error },
+    Root {
+        root: PathBuf,
+        error: io::Error,
+    },
     NoManifest(PathBuf),
     NotUtf8(PathBuf),
-    Spawn { program: PathBuf, error: io::Error },
-    Evaluation { status: String, stderr: String },
+    Spawn {
+        program: PathBuf,
+        error: io::Error,
+    },
+    Evaluation {
+        status: String,
+        stderr: String,
+    },
+    /// the layer printed something that isn't the serialized declarations: a Shikumi bug, since
+    /// the layer writes nothing else.
+    Declarations(serde_json::Error),
+    Check(check::CheckError),
     Document(RegistryError),
 }
 
@@ -166,6 +205,11 @@ impl fmt::Display for ProduceError {
                     "evaluating the declarations failed ({status}):\n{stderr}"
                 )
             }
+            Self::Declarations(error) => write!(
+                f,
+                "the declaration layer's output isn't the serialized declarations, which is a Shikumi bug: {error}"
+            ),
+            Self::Check(error) => error.fmt(f),
             Self::Document(error) => error.fmt(f),
         }
     }

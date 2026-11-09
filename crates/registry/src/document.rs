@@ -1,269 +1,30 @@
-//! the `shikumi.registry` document: its types, its published schema, and the one refusal every
-//! consumer goes through. [`Registry::from_json`] is the only way to get a [`Registry`], so a
-//! document carrying an error diagnostic, an unknown field or another version never reaches a
-//! consumer, whichever entry point read it.
+//! the `shikumi.registry` document: its types, its published schema, the diagnostics it carries,
+//! and the one refusal every consumer goes through. [`Registry::try_from`] a [`Document`], or
+//! [`Registry::from_json`], is the only way to get a [`Registry`], so a document carrying a
+//! diagnostic, an unknown field or another version never reaches a consumer, whichever entry point
+//! read it.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::ops::Deref;
+use std::num::NonZeroU32;
 
-use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 
-/// a validated string: the predicate decides what it accepts, the message says why it refused,
-/// and the schema states the same rule for other readers.
-macro_rules! checked_string {
-    ($(#[$doc:meta])* $name:ident, $valid:expr, $refusal:expr, $schema:tt) => {
-        $(#[$doc])*
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-        #[serde(try_from = "String", into = "String")]
-        pub struct $name(String);
+pub use crate::contract::{Identifier, RelativePath, Text};
+use crate::contract::{
+    NonEmpty, closed_set, contract_name, contract_version, require_every_property,
+};
+use crate::graph;
 
-        impl $name {
-            pub fn new(value: impl Into<String>) -> Result<Self, ContractError> {
-                let value = value.into();
-                if $valid(value.as_str()) {
-                    Ok(Self(value))
-                } else {
-                    Err(ContractError(format!("{value:?} {}", $refusal)))
-                }
-            }
+contract_name!(SchemaName, "shikumi.registry");
 
-            pub fn as_str(&self) -> &str {
-                &self.0
-            }
-        }
-
-        impl TryFrom<String> for $name {
-            type Error = ContractError;
-
-            fn try_from(value: String) -> Result<Self, Self::Error> {
-                Self::new(value)
-            }
-        }
-
-        impl From<$name> for String {
-            fn from(value: $name) -> Self {
-                value.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
-
-        impl JsonSchema for $name {
-            fn schema_name() -> Cow<'static, str> {
-                stringify!($name).into()
-            }
-
-            fn json_schema(_: &mut SchemaGenerator) -> Schema {
-                json_schema!($schema)
-            }
-        }
-    };
-}
-
-const IDENTIFIER_PATTERN: &str = "^[a-z][a-z0-9-]*$";
-
-fn identifier(value: &str) -> bool {
-    let mut bytes = value.bytes();
-    bytes.next().is_some_and(|b| b.is_ascii_lowercase())
-        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
-fn text(value: &str) -> bool {
-    !value.trim().is_empty()
-}
-
-fn relative_path(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .split('/')
-            .all(|part| !part.is_empty() && part != "." && part != "..")
-}
-
-checked_string!(
-    /// a lowercase name: a letter, then letters, digits and hyphens. projects, steps, commands,
-    /// services and extension namespaces are all named this way.
-    Identifier,
-    identifier,
-    "is not an identifier matching ^[a-z][a-z0-9-]*$",
-    {
-        "type": "string",
-        "pattern": IDENTIFIER_PATTERN,
-        "description": "a lowercase name: a letter, then letters, digits and hyphens."
-    }
+contract_version!(
+    /// the document's version.
+    Version,
+    1,
+    0
 );
-
-checked_string!(
-    /// text that says something; an empty or blank string is a sentinel, not a value.
-    Text,
-    text,
-    "is empty or blank, and text must say something",
-    {
-        "type": "string",
-        "pattern": "\\S",
-        "description": "non-blank text."
-    }
-);
-
-checked_string!(
-    /// a path relative to the repository root, written the one way the declaration layer writes
-    /// it: no leading or trailing slash, and no empty, `.` or `..` part. an absolute path would
-    /// differ between worktrees of one commit, which the document never does.
-    RelativePath,
-    relative_path,
-    "is not a normalized path relative to the repository root",
-    {
-        "type": "string",
-        "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$",
-        "description": "a normalized path relative to the repository root."
-    }
-);
-
-/// a list with at least one element, so an empty one is refused where it's read rather than by a
-/// check someone has to remember.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<T>", into = "Vec<T>")]
-pub struct NonEmpty<T: Clone>(Vec<T>);
-
-impl<T: Clone> TryFrom<Vec<T>> for NonEmpty<T> {
-    type Error = ContractError;
-
-    fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
-        if items.is_empty() {
-            Err(ContractError("the list must not be empty".to_owned()))
-        } else {
-            Ok(Self(items))
-        }
-    }
-}
-
-impl<T: Clone> From<NonEmpty<T>> for Vec<T> {
-    fn from(value: NonEmpty<T>) -> Self {
-        value.0
-    }
-}
-
-impl<T: Clone> Deref for NonEmpty<T> {
-    type Target = [T];
-
-    fn deref(&self) -> &[T] {
-        &self.0
-    }
-}
-
-impl<T: Clone + JsonSchema> JsonSchema for NonEmpty<T> {
-    fn schema_name() -> Cow<'static, str> {
-        format!("NonEmpty_{}", T::schema_name()).into()
-    }
-
-    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-        let mut schema = <Vec<T>>::json_schema(generator);
-        schema.insert("minItems".to_owned(), 1.into());
-        schema
-    }
-}
-
-/// the document's name, `shikumi.registry`. any other name is another contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SchemaName;
-
-const SCHEMA_NAME: &str = "shikumi.registry";
-
-impl Serialize for SchemaName {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(SCHEMA_NAME)
-    }
-}
-
-impl<'de> Deserialize<'de> for SchemaName {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let name = String::deserialize(deserializer)?;
-        if name == SCHEMA_NAME {
-            Ok(Self)
-        } else {
-            Err(serde::de::Error::custom(format!(
-                "schema {name:?} is not {SCHEMA_NAME:?}"
-            )))
-        }
-    }
-}
-
-impl JsonSchema for SchemaName {
-    fn schema_name() -> Cow<'static, str> {
-        "SchemaName".into()
-    }
-
-    fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({ "const": SCHEMA_NAME })
-    }
-}
-
-/// the document's version. a reader takes exactly the version it was built for: the minor number
-/// records an additive change for the schema's history, and a reader still refuses it rather than
-/// skip fields it can't name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Version;
-
-impl Version {
-    pub const MAJOR: u32 = 1;
-    pub const MINOR: u32 = 0;
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct VersionNumbers {
-    major: u32,
-    minor: u32,
-}
-
-impl Serialize for Version {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        VersionNumbers {
-            major: Self::MAJOR,
-            minor: Self::MINOR,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Version {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let VersionNumbers { major, minor } = VersionNumbers::deserialize(deserializer)?;
-        if (major, minor) == (Self::MAJOR, Self::MINOR) {
-            Ok(Self)
-        } else {
-            Err(serde::de::Error::custom(format!(
-                "version {major}.{minor} is not the supported version {}.{}",
-                Self::MAJOR,
-                Self::MINOR
-            )))
-        }
-    }
-}
-
-impl JsonSchema for Version {
-    fn schema_name() -> Cow<'static, str> {
-        "Version".into()
-    }
-
-    fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({
-            "type": "object",
-            "properties": {
-                "major": { "const": Self::MAJOR },
-                "minor": { "const": Self::MINOR }
-            },
-            "required": ["major", "minor"],
-            "additionalProperties": false
-        })
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -302,21 +63,12 @@ pub struct Service {
     pub restart: Restart,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum Restart {
-    Never,
-    OnFailure,
-    Always,
-}
-
-impl fmt::Display for Restart {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Never => "never",
-            Self::OnFailure => "on-failure",
-            Self::Always => "always",
-        })
+closed_set! {
+    /// when the supervisor restarts a service.
+    Restart {
+        Never = "never": "the service stays stopped once it exits",
+        OnFailure = "on-failure": "the service restarts when it exits with a failure",
+        Always = "always": "the service restarts whenever it exits",
     }
 }
 
@@ -333,87 +85,182 @@ pub enum Severity {
     Error,
 }
 
-/// what kind of rule a finding broke. the message says it for people; the code is for programs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum Code {
-    Missing,
-    Type,
-    Invalid,
-    Enum,
-    UnknownOption,
-    Conflict,
-    StoreReference,
-    Location,
-    UnknownReference,
-    Duplicate,
-    NoDeclaration,
-    Overlap,
+closed_set! {
+    /// what kind of rule a finding broke, as a stable name programs can match on. the message says it
+    /// for people and is free to change; a code isn't.
+    Code {
+        Missing = "missing": "a required field has no value",
+        Type = "type": "a value of the wrong kind, such as a string where a list belongs",
+        Invalid = "invalid": "a value of the right kind that breaks its type's rule",
+        Enum = "enum": "a value outside a closed enumeration",
+        UnknownOption = "unknown-option": "a field the record doesn't have",
+        StoreReference = "store-reference": "text that refers to a store path",
+        Location = "location": "text that contains the repository's location",
+        UnknownReference = "unknown-reference": "a name that refers to no project or step",
+        Cycle = "cycle": "projects that depend on each other, or steps that run after each other, in a loop",
+        Duplicate = "duplicate": "a command or service name more than one project declares",
+        NoDeclaration = "no-declaration": "a listed directory with no declaration file",
+        NotADeclaration = "not-a-declaration": "a declaration file that doesn't return a `shikumi.project` result",
+        Overlap = "overlap": "a listed directory at or inside another project's directory",
+    }
 }
 
-/// one finding from the declaration layer, naming where it was defined.
+/// one step of a field's path: an attribute name, or a list element's index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Segment {
+    Field(String),
+    Index(u32),
+}
+
+/// a field's path inside a declaration or the manifest, written as Nix would select it:
+/// `steps.build.after[0]`, with a name that isn't an identifier quoted.
+#[derive(Debug, Clone, Copy)]
+pub struct ShowPath<'a>(pub &'a [Segment]);
+
+impl fmt::Display for ShowPath<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, segment) in self.0.iter().enumerate() {
+            match segment {
+                Segment::Index(item) => write!(f, "[{item}]")?,
+                Segment::Field(name) => {
+                    if index > 0 {
+                        f.write_str(".")?;
+                    }
+                    if is_attribute_name(name) {
+                        f.write_str(name)?;
+                    } else {
+                        write!(f, "{name:?}")?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+// a name Nix accepts unquoted in an attribute path.
+fn is_attribute_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '\'' | '-'))
+}
+
+/// a line and column, both counted from 1 as the evaluator counts them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Position {
+    pub line: NonZeroU32,
+    pub column: NonZeroU32,
+}
+
+/// where a finding points: a file relative to the repository root, and the position of the
+/// attribute that defined the field, or of the nearest enclosing one that has a position. null
+/// when nothing has one, and the finding is about the file as a whole.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = require_every_property)]
+pub struct Location {
+    pub file: RelativePath,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub position: Option<Position>,
+}
+
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.file)?;
+        if let Some(Position { line, column }) = self.position {
+            write!(f, ":{line}:{column}")?;
+        }
+        Ok(())
+    }
+}
+
+/// a second place a finding involves, such as the first declaration of a duplicated name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Related {
+    pub location: Location,
+    pub message: Text,
+}
+
+/// one finding, collected rather than thrown, so a document carries every one of them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(transform = require_every_property)]
 pub struct Diagnostic {
     pub severity: Severity,
     pub code: Code,
+    /// the project the finding belongs to; null for one about the manifest as a whole or a
+    /// manifest entry whose name isn't an identifier.
     #[serde(deserialize_with = "Option::deserialize")]
     pub project: Option<Identifier>,
-    /// the option path inside the declaration or manifest, null for a finding about the whole
-    /// composition.
-    #[serde(deserialize_with = "Option::deserialize")]
-    pub option: Option<Text>,
-    /// the files that defined it, relative to the repository root. a file outside the repository
-    /// isn't named, and the message says one was involved.
-    pub files: Vec<RelativePath>,
+    /// the field's path inside the declaration or manifest; empty for a finding about the whole
+    /// file or composition.
+    pub path: Vec<Segment>,
+    pub location: Location,
+    /// what's wrong with the field, as a phrase the path reads before.
     pub message: Text,
+    /// how to fix it, where there's one fix to name.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub help: Option<Text>,
+    pub related: Vec<Related>,
+}
+
+impl Diagnostic {
+    /// the finding as one sentence: the field's path, then what's wrong with it.
+    pub fn headline(&self) -> String {
+        if self.path.is_empty() {
+            self.message.to_string()
+        } else {
+            format!("`{}` {}", ShowPath(&self.path), self.message)
+        }
+    }
 }
 
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut files = self.files.iter();
-        match files.next() {
-            Some(first) => {
-                write!(f, "{first}")?;
-                files.try_for_each(|file| write!(f, ", {file}"))?;
-            }
-            None => f.write_str("(no file)")?,
-        }
-        if let Some(project) = &self.project {
-            write!(f, " [{project}]")?;
-        }
-        if let Some(option) = &self.option {
-            write!(f, ": {option}")?;
-        }
-        write!(f, ": {}", self.message)
+        write!(
+            f,
+            "{}: error[{}]: {}",
+            self.location,
+            self.code,
+            self.headline()
+        )
     }
 }
 
-// the document as it's written. serde reads this shape; the rules that span fields are checked in
-// the conversion to `Registry`, so the public type can only be built through them.
-/// every project a repository composes, as Shikumi's declaration layer checked them, or every
-/// finding that refused them.
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+/// every project a repository composes, as Shikumi's checker accepted them, or every finding that
+/// refused them. serde reads this shape; the rules that span its fields are checked in the
+/// conversion to [`Registry`], so a consumer can only act on a document through them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "shikumi.registry", transform = require_every_property)]
-struct RawRegistry {
-    schema: SchemaName,
-    version: Version,
+pub struct Document {
+    pub(crate) schema: SchemaName,
+    pub(crate) version: Version,
     /// the project a focused composition centres on, or null for the global composition.
     #[serde(deserialize_with = "Option::deserialize")]
-    focus: Option<Identifier>,
+    pub(crate) focus: Option<Identifier>,
     /// every composed project, or null when the document carries a diagnostic.
     #[serde(deserialize_with = "Option::deserialize")]
-    projects: Option<BTreeMap<Identifier, Project>>,
+    pub(crate) projects: Option<BTreeMap<Identifier, Project>>,
     /// the global composition's remainder; null in a focused one, and when the document carries a
     /// diagnostic.
     #[serde(deserialize_with = "Option::deserialize")]
-    remainder: Option<Remainder>,
-    diagnostics: Vec<Diagnostic>,
+    pub(crate) remainder: Option<Remainder>,
+    pub(crate) diagnostics: Vec<Diagnostic>,
 }
 
-// what `to_json` writes: `RawRegistry`'s fields in its order, borrowed from an accepted registry, so
+impl Document {
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+}
+
+// what `to_json` writes: `Document`'s fields in its order, borrowed from an accepted registry, so
 // printing a document copies none of it.
 #[derive(Serialize)]
 struct WrittenRegistry<'a> {
@@ -444,29 +291,24 @@ impl Registry {
     /// reads a document and refuses it unless it's accepted. this is the refusal every entry point
     /// shares.
     pub fn from_json(bytes: &[u8]) -> Result<Self, RegistryError> {
-        let raw: RawRegistry = serde_json::from_slice(bytes).map_err(RegistryError::Malformed)?;
-        Self::try_from(raw)
+        let document: Document = serde_json::from_slice(bytes).map_err(RegistryError::Malformed)?;
+        Self::try_from(document)
     }
 
-    /// the document in its one written form: pretty JSON with keys in a fixed order, then a
-    /// newline. two worktrees of one commit produce these bytes alike.
+    /// the document in its one written form. two worktrees of one commit produce these bytes alike.
     pub fn to_json(&self) -> String {
         let (focus, remainder) = match &self.composition {
             Composition::Global { remainder } => (None, Some(remainder)),
             Composition::Focused { project } => (Some(project), None),
         };
-        let written = WrittenRegistry {
+        crate::contract::render_json(&WrittenRegistry {
             schema: SchemaName,
             version: Version,
             focus,
             projects: &self.projects,
             remainder,
             diagnostics: [],
-        };
-        let mut json =
-            serde_json::to_string_pretty(&written).expect("a registry always serializes");
-        json.push('\n');
-        json
+        })
     }
 
     pub fn composition(&self) -> &Composition {
@@ -478,19 +320,19 @@ impl Registry {
     }
 }
 
-impl TryFrom<RawRegistry> for Registry {
+impl TryFrom<Document> for Registry {
     type Error = RegistryError;
 
-    fn try_from(raw: RawRegistry) -> Result<Self, Self::Error> {
-        // the name and version have done their work by deserializing at all.
-        let RawRegistry {
+    fn try_from(document: Document) -> Result<Self, Self::Error> {
+        // the name and version have done their work by existing at all.
+        let Document {
             schema: SchemaName,
             version: Version,
             focus,
             projects,
             remainder,
             diagnostics,
-        } = raw;
+        } = document;
         if !diagnostics.is_empty() {
             return Err(RegistryError::Refused(diagnostics));
         }
@@ -537,6 +379,9 @@ impl TryFrom<RawRegistry> for Registry {
                 }
             }
         }
+        if let Some(message) = first_loop(&projects) {
+            return contract(message);
+        }
         Ok(Self {
             composition,
             projects,
@@ -544,44 +389,48 @@ impl TryFrom<RawRegistry> for Registry {
     }
 }
 
-/// a struct whose `Option` fields serde reads through `Option::deserialize` needs each of them
-/// present, as an explicit `null` where it doesn't apply. schemars leaves an `Option` out of
-/// `required`, and its own `required` attribute drops `null` from the field's schema too, so the
-/// struct says so itself: every property is required, and each keeps its nullable schema.
-fn require_every_property(schema: &mut Schema) {
-    let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) else {
-        return;
+// the first loop in either ordering, which nothing could order. every reference resolves by now.
+fn first_loop(projects: &BTreeMap<Identifier, Project>) -> Option<String> {
+    let named = |found: &[(usize, graph::Edge)], names: &[&str]| -> Vec<String> {
+        found
+            .iter()
+            .map(|(node, _)| names[*node].to_owned())
+            .collect()
     };
-    let required = properties
-        .keys()
-        .cloned()
-        .map(serde_json::Value::String)
+    let sentence = |names: Vec<String>, relation: &str| {
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        graph::sentence(&names, relation)
+    };
+    let names: Vec<&str> = projects.keys().map(Identifier::as_str).collect();
+    let position = graph::positions(names.iter().copied());
+    let dependencies: Vec<Vec<graph::Edge>> = projects
+        .values()
+        .map(|project| graph::edges(project.depends_on.iter().map(Identifier::as_str), &position))
         .collect();
-    schema.insert("required".to_owned(), serde_json::Value::Array(required));
+    if let Some(found) = graph::cycles(&dependencies).first() {
+        let described = sentence(named(found, &names), "depends on");
+        return Some(format!("the dependencies loop: {described}"));
+    }
+    for (name, project) in projects {
+        let steps: Vec<&str> = project.steps.keys().map(Identifier::as_str).collect();
+        let position = graph::positions(steps.iter().copied());
+        let order: Vec<Vec<graph::Edge>> = project
+            .steps
+            .values()
+            .map(|step| graph::edges(step.after.iter().map(Identifier::as_str), &position))
+            .collect();
+        if let Some(found) = graph::cycles(&order).first() {
+            let described = sentence(named(found, &steps), "runs after");
+            return Some(format!("the steps of `{name}` loop: {described}"));
+        }
+    }
+    None
 }
 
 /// the published JSON schema of the document.
 pub fn schema() -> Schema {
-    schemars::schema_for!(RawRegistry)
+    schemars::schema_for!(Document)
 }
-
-/// how the schema is written to disk, so the tracked file and the drift test agree byte for byte.
-pub fn render_schema(schema: &Schema) -> String {
-    let mut json = serde_json::to_string_pretty(schema).expect("a schema always serializes");
-    json.push('\n');
-    json
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContractError(String);
-
-impl fmt::Display for ContractError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ContractError {}
 
 #[derive(Debug)]
 pub enum RegistryError {
@@ -593,14 +442,18 @@ pub enum RegistryError {
     Contract(String),
 }
 
+/// the line that ends every refusal, whoever renders the findings above it.
+pub fn refusal_summary(count: usize) -> String {
+    let noun = if count == 1 { "finding" } else { "findings" };
+    format!("the declarations are refused, with {count} {noun}")
+}
+
 impl fmt::Display for RegistryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Malformed(error) => write!(f, "the registry document is malformed: {error}"),
             Self::Refused(diagnostics) => {
-                let count = diagnostics.len();
-                let noun = if count == 1 { "finding" } else { "findings" };
-                write!(f, "the declarations are refused, with {count} {noun}:")?;
+                write!(f, "{}:", refusal_summary(diagnostics.len()))?;
                 diagnostics
                     .iter()
                     .try_for_each(|diagnostic| write!(f, "\n  {diagnostic}"))
@@ -614,11 +467,23 @@ impl fmt::Display for RegistryError {
 
 impl std::error::Error for RegistryError {}
 
+/// a text the checker wrote. it always says something, so this can't fail on any message the
+/// checker builds.
+pub(crate) fn text(value: impl Into<String>) -> Text {
+    Text::new(value).expect("a message the checker writes is never blank")
+}
+
+/// an identifier when `name` is one.
+pub(crate) fn identifier(name: &str) -> Option<Identifier> {
+    Identifier::new(name).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+    use crate::contract::render_json;
 
     const BASIC: &str = include_str!("../fixtures/basic/document.json");
 
@@ -637,13 +502,29 @@ mod tests {
         }
     }
 
+    fn finding(path: Value) -> Value {
+        json!({
+            "severity": "error",
+            "code": "missing",
+            "project": "web",
+            "path": path,
+            "location": {
+                "file": "apps/web/project.nix",
+                "position": {"line": 3, "column": 5}
+            },
+            "message": "is required but not defined",
+            "help": null,
+            "related": []
+        })
+    }
+
     // the tracked schema is generated from the types; this fails when one drifts, and
     // `shikumi registry schema > crates/registry/schema/registry.schema.json` regenerates it.
     #[test]
     fn tracked_schema_matches_the_types() {
         let tracked = include_str!("../schema/registry.schema.json");
         assert!(
-            tracked == render_schema(&schema()),
+            tracked == render_json(&schema()),
             "crates/registry/schema/registry.schema.json is stale; regenerate it with `shikumi registry schema`"
         );
     }
@@ -659,23 +540,16 @@ mod tests {
         let mut document = basic();
         document["projects"] = Value::Null;
         document["remainder"] = Value::Null;
-        let finding = |option: &str| {
-            json!({
-                "severity": "error",
-                "code": "missing",
-                "project": "web",
-                "option": option,
-                "files": ["apps/web/project.nix"],
-                "message": "is required but not defined"
-            })
-        };
-        document["diagnostics"] = json!([finding("project.summary"), finding("steps.build.exec")]);
+        document["diagnostics"] = json!([
+            finding(json!(["project", "summary"])),
+            finding(json!(["steps", "build", "after", 0]))
+        ]);
         match read(&document) {
             Err(RegistryError::Refused(diagnostics)) => {
                 assert_eq!(diagnostics.len(), 2);
                 assert_eq!(
                     diagnostics[1].to_string(),
-                    "apps/web/project.nix [web]: steps.build.exec: is required but not defined"
+                    "apps/web/project.nix:3:5: error[missing]: `steps.build.after[0]` is required but not defined"
                 );
             }
             other => panic!("expected a refusal, got {other:?}"),
@@ -685,14 +559,7 @@ mod tests {
     #[test]
     fn a_diagnostic_is_refused_even_when_projects_are_present() {
         let mut document = basic();
-        document["diagnostics"] = json!([{
-            "severity": "error",
-            "code": "duplicate",
-            "project": null,
-            "option": "commands.serve",
-            "files": ["apps/web/project.nix", "docs/project.nix"],
-            "message": "is declared by more than one project"
-        }]);
+        document["diagnostics"] = json!([finding(json!([]))]);
         assert!(matches!(read(&document), Err(RegistryError::Refused(_))));
     }
 
@@ -704,7 +571,11 @@ mod tests {
         project["projects"]["web"]["exec"] = json!("serve");
         let mut step = basic();
         step["projects"]["core"]["steps"]["build"]["exec"] = json!("make");
-        for document in [top, project, step] {
+        let mut diagnostic = basic();
+        let mut extra = finding(json!([]));
+        extra["files"] = json!([]);
+        diagnostic["diagnostics"] = json!([extra]);
+        for document in [top, project, step, diagnostic] {
             assert!(matches!(read(&document), Err(RegistryError::Malformed(_))));
         }
     }
@@ -733,6 +604,14 @@ mod tests {
         let mut document = basic();
         document.as_object_mut().unwrap().remove("focus");
         assert!(matches!(read(&document), Err(RegistryError::Malformed(_))));
+        let mut diagnostic = basic();
+        let mut partial = finding(json!([]));
+        partial.as_object_mut().unwrap().remove("help");
+        diagnostic["diagnostics"] = json!([partial]);
+        assert!(matches!(
+            read(&diagnostic),
+            Err(RegistryError::Malformed(_))
+        ));
     }
 
     #[test]
@@ -754,6 +633,11 @@ mod tests {
                 "{pointer} was accepted"
             );
         }
+        let mut line = basic();
+        let mut zero = finding(json!([]));
+        zero["location"]["position"]["line"] = json!(0);
+        line["diagnostics"] = json!([zero]);
+        assert!(matches!(read(&line), Err(RegistryError::Malformed(_))));
     }
 
     #[test]
@@ -770,6 +654,25 @@ mod tests {
         focus["focus"] = json!("nowhere");
         focus["remainder"] = Value::Null;
         assert!(contract_message(&focus).contains("`nowhere`"));
+    }
+
+    #[test]
+    fn a_loop_in_either_ordering_breaks_the_contract() {
+        let mut dependencies = basic();
+        dependencies["projects"]["core"]["dependsOn"] = json!(["web"]);
+        assert!(
+            contract_message(&dependencies).contains("the dependencies loop"),
+            "{}",
+            contract_message(&dependencies)
+        );
+
+        let mut steps = basic();
+        steps["projects"]["core"]["steps"]["build"]["after"] = json!(["test"]);
+        assert!(
+            contract_message(&steps).contains("the steps of `core` loop"),
+            "{}",
+            contract_message(&steps)
+        );
     }
 
     #[test]
@@ -809,8 +712,47 @@ mod tests {
             assert!(required(&schema).iter().any(|r| r == field), "{field}");
         }
         let diagnostic = &schema["$defs"]["Diagnostic"];
-        for field in ["project", "option", "files"] {
+        for field in ["project", "path", "location", "help", "related"] {
             assert!(required(diagnostic).iter().any(|r| r == field), "{field}");
         }
+        assert!(
+            required(&schema["$defs"]["Location"])
+                .iter()
+                .any(|r| r == "position")
+        );
+    }
+
+    #[test]
+    fn a_path_reads_the_way_nix_selects_it() {
+        let path = [
+            Segment::Field("extensions".into()),
+            Segment::Field("Not Valid".into()),
+            Segment::Field("pages".into()),
+            Segment::Index(2),
+        ];
+        assert_eq!(
+            ShowPath(&path).to_string(),
+            r#"extensions."Not Valid".pages[2]"#
+        );
+    }
+
+    #[test]
+    fn every_code_is_listed_once_with_its_name() {
+        let names: Vec<String> = Code::ALL
+            .iter()
+            .map(|code| {
+                serde_json::to_value(code)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        let shown: Vec<&str> = Code::ALL.iter().map(|code| code.as_str()).collect();
+        assert_eq!(names, shown);
+        let mut unique = shown.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), Code::ALL.len());
     }
 }

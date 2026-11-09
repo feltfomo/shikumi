@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "shikumi.registry",
-  "description": "every project a repository composes, as Shikumi's declaration layer checked them, or every\nfinding that refused them.",
+  "description": "every project a repository composes, as Shikumi's checker accepted them, or every finding that\nrefused them. serde reads this shape; the rules that span its fields are checked in the\nconversion to [`Registry`], so a consumer can only act on a document through them.",
   "type": "object",
   "properties": {
     "diagnostics": {
@@ -63,7 +63,7 @@
   ],
   "$defs": {
     "Code": {
-      "description": "what kind of rule a finding broke. the message says it for people; the code is for programs.",
+      "description": "what kind of rule a finding broke, as a stable name programs can match on. the message says it\nfor people and is free to change; a code isn't.",
       "type": "string",
       "enum": [
         "missing",
@@ -71,12 +71,13 @@
         "invalid",
         "enum",
         "unknown-option",
-        "conflict",
         "store-reference",
         "location",
         "unknown-reference",
+        "cycle",
         "duplicate",
         "no-declaration",
+        "not-a-declaration",
         "overlap"
       ]
     },
@@ -93,24 +94,14 @@
       ]
     },
     "Diagnostic": {
-      "description": "one finding from the declaration layer, naming where it was defined.",
+      "description": "one finding, collected rather than thrown, so a document carries every one of them.",
       "type": "object",
       "properties": {
         "code": {
           "$ref": "#/$defs/Code"
         },
-        "files": {
-          "description": "the files that defined it, relative to the repository root. a file outside the repository\nisn't named, and the message says one was involved.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/RelativePath"
-          }
-        },
-        "message": {
-          "$ref": "#/$defs/Text"
-        },
-        "option": {
-          "description": "the option path inside the declaration or manifest, null for a finding about the whole\ncomposition.",
+        "help": {
+          "description": "how to fix it, where there's one fix to name.",
           "anyOf": [
             {
               "$ref": "#/$defs/Text"
@@ -120,7 +111,22 @@
             }
           ]
         },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "message": {
+          "description": "what's wrong with the field, as a phrase the path reads before.",
+          "$ref": "#/$defs/Text"
+        },
+        "path": {
+          "description": "the field's path inside the declaration or manifest; empty for a finding about the whole\nfile or composition.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        },
         "project": {
+          "description": "the project the finding belongs to; null for one about the manifest as a whole or a\nmanifest entry whose name isn't an identifier.",
           "anyOf": [
             {
               "$ref": "#/$defs/Identifier"
@@ -130,6 +136,12 @@
             }
           ]
         },
+        "related": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Related"
+          }
+        },
         "severity": {
           "$ref": "#/$defs/Severity"
         }
@@ -137,17 +149,43 @@
       "additionalProperties": false,
       "required": [
         "code",
-        "files",
+        "help",
+        "location",
         "message",
-        "option",
+        "path",
         "project",
+        "related",
         "severity"
       ]
     },
     "Identifier": {
-      "description": "a lowercase name: a letter, then letters, digits and hyphens.",
+      "description": "an identifier: a lowercase letter, then lowercase letters, digits and hyphens",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "Location": {
+      "description": "where a finding points: a file relative to the repository root, and the position of the\nattribute that defined the field, or of the nearest enclosing one that has a position. null\nwhen nothing has one, and the finding is about the file as a whole.",
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Position"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "position"
+      ]
     },
     "NonEmpty_Text": {
       "type": "array",
@@ -155,6 +193,27 @@
         "$ref": "#/$defs/Text"
       },
       "minItems": 1
+    },
+    "Position": {
+      "description": "a line and column, both counted from 1 as the evaluator counts them.",
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "line",
+        "column"
+      ]
     },
     "Project": {
       "type": "object",
@@ -222,8 +281,25 @@
         "extensions"
       ]
     },
+    "Related": {
+      "description": "a second place a finding involves, such as the first declaration of a duplicated name.",
+      "type": "object",
+      "properties": {
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "message": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "location",
+        "message"
+      ]
+    },
     "RelativePath": {
-      "description": "a normalized path relative to the repository root.",
+      "description": "a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part",
       "type": "string",
       "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$"
     },
@@ -244,6 +320,7 @@
       ]
     },
     "Restart": {
+      "description": "when the supervisor restarts a service.",
       "type": "string",
       "enum": [
         "never",
@@ -253,6 +330,19 @@
     },
     "SchemaName": {
       "const": "shikumi.registry"
+    },
+    "Segment": {
+      "description": "one step of a field's path: an attribute name, or a list element's index.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      ]
     },
     "Service": {
       "type": "object",
@@ -298,7 +388,7 @@
       ]
     },
     "Text": {
-      "description": "non-blank text.",
+      "description": "non-blank text",
       "type": "string",
       "pattern": "\\S"
     },

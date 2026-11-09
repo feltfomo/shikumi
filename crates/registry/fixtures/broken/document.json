@@ -1,0 +1,760 @@
+{
+  "schema": "shikumi.registry",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "focus": null,
+  "projects": null,
+  "remainder": null,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": null,
+      "path": [
+        "extensions",
+        "broken"
+      ],
+      "location": {
+        "file": "shikumi.nix",
+        "position": {
+          "line": 31,
+          "column": 5
+        }
+      },
+      "message": "must be a schema built from `shikumi.lib.types`",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": null,
+      "path": [
+        "extensions",
+        "sneaky"
+      ],
+      "location": {
+        "file": "shikumi.nix",
+        "position": {
+          "line": 35,
+          "column": 5
+        }
+      },
+      "message": "must be a schema built from `shikumi.lib.types`",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-option",
+      "project": null,
+      "path": [
+        "owners"
+      ],
+      "location": {
+        "file": "shikumi.nix",
+        "position": {
+          "line": 39,
+          "column": 3
+        }
+      },
+      "message": "is not an option here",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "outside",
+      "path": [
+        "projects",
+        "outside"
+      ],
+      "location": {
+        "file": "shikumi.nix",
+        "position": {
+          "line": 19,
+          "column": 5
+        }
+      },
+      "message": "must be a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "overlap",
+      "project": "overlap",
+      "path": [
+        "projects",
+        "overlap"
+      ],
+      "location": {
+        "file": "shikumi.nix",
+        "position": {
+          "line": 15,
+          "column": 5
+        }
+      },
+      "message": "lists `projects/dangling/inner`, which lies at or inside `projects/dangling`, the directory of `dangling`",
+      "help": "give every project a directory of its own",
+      "related": [
+        {
+          "location": {
+            "file": "shikumi.nix",
+            "position": {
+              "line": 14,
+              "column": 5
+            }
+          },
+          "message": "`dangling` is listed here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "no-declaration",
+      "project": "absent",
+      "path": [
+        "projects",
+        "absent"
+      ],
+      "location": {
+        "file": "shikumi.nix",
+        "position": {
+          "line": 18,
+          "column": 5
+        }
+      },
+      "message": "lists `projects/absent`, which has no project.nix",
+      "help": "add `projects/absent/project.nix`, or take `absent` out of the manifest",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "bad-names",
+      "path": [
+        "project",
+        "dependsOn",
+        0
+      ],
+      "location": {
+        "file": "projects/bad-names/project.nix",
+        "position": {
+          "line": 6,
+          "column": 5
+        }
+      },
+      "message": "must be an identifier: a lowercase letter, then lowercase letters, digits and hyphens",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "bad-names",
+      "path": [
+        "steps",
+        "Build"
+      ],
+      "location": {
+        "file": "projects/bad-names/project.nix",
+        "position": {
+          "line": 8,
+          "column": 3
+        }
+      },
+      "message": "is not an identifier: a lowercase letter, then lowercase letters, digits and hyphens",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "enum",
+      "project": "closed-enum",
+      "path": [
+        "services",
+        "worker",
+        "restart"
+      ],
+      "location": {
+        "file": "projects/closed-enum/project.nix",
+        "position": {
+          "line": 10,
+          "column": 5
+        }
+      },
+      "message": "must be one of `never`, `on-failure`, `always`",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "empty-list",
+      "path": [
+        "project",
+        "maintainers"
+      ],
+      "location": {
+        "file": "projects/empty-list/project.nix",
+        "position": {
+          "line": 5,
+          "column": 5
+        }
+      },
+      "message": "must not be empty",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "extensions",
+      "path": [
+        "extensions",
+        "layout",
+        "pages",
+        0
+      ],
+      "location": {
+        "file": "projects/extensions/project.nix",
+        "position": {
+          "line": 12,
+          "column": 5
+        }
+      },
+      "message": "must be a non-blank pattern relative to the repository root, with no leading slash and no `..` part",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "type",
+      "project": "extensions",
+      "path": [
+        "extensions",
+        "meta",
+        "logo"
+      ],
+      "location": {
+        "file": "projects/extensions/project.nix",
+        "position": {
+          "line": 9,
+          "column": 5
+        }
+      },
+      "message": "must be JSON data: a string, number, boolean, null, list or attribute set of them, not a path",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-option",
+      "project": "extensions",
+      "path": [
+        "extensions",
+        "nobody"
+      ],
+      "location": {
+        "file": "projects/extensions/project.nix",
+        "position": {
+          "line": 10,
+          "column": 5
+        }
+      },
+      "message": "is not an option here",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-option",
+      "project": "extensions",
+      "path": [
+        "extensions",
+        "sneaky"
+      ],
+      "location": {
+        "file": "projects/extensions/project.nix",
+        "position": {
+          "line": 11,
+          "column": 5
+        }
+      },
+      "message": "is not an option here",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "extensions",
+      "path": [
+        "extensions",
+        "team",
+        "owner"
+      ],
+      "location": {
+        "file": "projects/extensions/project.nix",
+        "position": {
+          "line": 8,
+          "column": 5
+        }
+      },
+      "message": "must be an identifier: a lowercase letter, then lowercase letters, digits and hyphens",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "store-reference",
+      "project": "laundered",
+      "path": [
+        "project",
+        "summary"
+      ],
+      "location": {
+        "file": "projects/laundered/project.nix",
+        "position": {
+          "line": 8,
+          "column": 5
+        }
+      },
+      "message": "refers to a store path, and the registry document carries none",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "location",
+      "project": "location",
+      "path": [
+        "extensions",
+        "meta"
+      ],
+      "location": {
+        "file": "projects/location/project.nix",
+        "position": {
+          "line": 7,
+          "column": 3
+        }
+      },
+      "message": "has a name that contains the repository's location, which differs between worktrees",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "location",
+      "project": "location",
+      "path": [
+        "project",
+        "summary"
+      ],
+      "location": {
+        "file": "projects/location/project.nix",
+        "position": {
+          "line": 4,
+          "column": 5
+        }
+      },
+      "message": "contains the repository's location, which differs between worktrees",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "missing",
+      "project": "missing",
+      "path": [
+        "project",
+        "summary"
+      ],
+      "location": {
+        "file": "projects/missing/project.nix",
+        "position": {
+          "line": 3,
+          "column": 3
+        }
+      },
+      "message": "is required but not defined",
+      "help": "add `summary = ...;`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "missing",
+      "project": "missing",
+      "path": [
+        "steps",
+        "build",
+        "exec"
+      ],
+      "location": {
+        "file": "projects/missing/project.nix",
+        "position": {
+          "line": 4,
+          "column": 3
+        }
+      },
+      "message": "is required but not defined",
+      "help": "add `exec = ...;`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "not-a-declaration",
+      "project": "no-factory",
+      "path": [],
+      "location": {
+        "file": "projects/no-factory/project.nix",
+        "position": null
+      },
+      "message": "returns an attribute set, not a `shikumi.project` result",
+      "help": "pass the record through the factory: `{ shikumi, ... }: shikumi.project { ... }`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "missing",
+      "project": "split",
+      "path": [
+        "commands",
+        "check",
+        "exec"
+      ],
+      "location": {
+        "file": "projects/split/project.nix",
+        "position": {
+          "line": 8,
+          "column": 5
+        }
+      },
+      "message": "is required but not defined",
+      "help": "add `exec = ...;`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "split",
+      "path": [
+        "steps",
+        "build",
+        "after",
+        0
+      ],
+      "location": {
+        "file": "projects/split/steps.nix",
+        "position": {
+          "line": 6,
+          "column": 5
+        }
+      },
+      "message": "must be an identifier: a lowercase letter, then lowercase letters, digits and hyphens",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "store-reference",
+      "project": "store-reference",
+      "path": [
+        "project",
+        "summary"
+      ],
+      "location": {
+        "file": "projects/store-reference/project.nix",
+        "position": {
+          "line": 11,
+          "column": 5
+        }
+      },
+      "message": "refers to a store path, and the registry document carries none",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-option",
+      "project": "unknown-options",
+      "path": [
+        "project",
+        "owner"
+      ],
+      "location": {
+        "file": "projects/unknown-options/project.nix",
+        "position": {
+          "line": 6,
+          "column": 5
+        }
+      },
+      "message": "is not an option here",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-option",
+      "project": "unknown-options",
+      "path": [
+        "steps",
+        "lint",
+        "cmd"
+      ],
+      "location": {
+        "file": "projects/unknown-options/project.nix",
+        "position": {
+          "line": 12,
+          "column": 5
+        }
+      },
+      "message": "is not an option here",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-option",
+      "project": "unknown-options",
+      "path": [
+        "tasks"
+      ],
+      "location": {
+        "file": "projects/unknown-options/project.nix",
+        "position": {
+          "line": 8,
+          "column": 3
+        }
+      },
+      "message": "is not an option here",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "type",
+      "project": "wrong-type",
+      "path": [
+        "commands",
+        "run",
+        "exec"
+      ],
+      "location": {
+        "file": "projects/wrong-type/project.nix",
+        "position": {
+          "line": 10,
+          "column": 5
+        }
+      },
+      "message": "must be a command line string, not a function",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "type",
+      "project": "wrong-type",
+      "path": [
+        "project",
+        "maintainers"
+      ],
+      "location": {
+        "file": "projects/wrong-type/project.nix",
+        "position": {
+          "line": 5,
+          "column": 5
+        }
+      },
+      "message": "must be a list, not a string",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "type",
+      "project": "wrong-type",
+      "path": [
+        "steps"
+      ],
+      "location": {
+        "file": "projects/wrong-type/project.nix",
+        "position": {
+          "line": 7,
+          "column": 3
+        }
+      },
+      "message": "must be an attribute set, not a list",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-reference",
+      "project": "dangling",
+      "path": [
+        "project",
+        "dependsOn",
+        1
+      ],
+      "location": {
+        "file": "projects/dangling/project.nix",
+        "position": {
+          "line": 6,
+          "column": 5
+        }
+      },
+      "message": "names `nowhere`, which isn't a listed project",
+      "help": "list `nowhere` in the manifest, or take it out of `dependsOn`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-reference",
+      "project": "dangling",
+      "path": [
+        "steps",
+        "test",
+        "after",
+        0
+      ],
+      "location": {
+        "file": "projects/dangling/project.nix",
+        "position": {
+          "line": 14,
+          "column": 5
+        }
+      },
+      "message": "names `build`, which isn't a step of `dangling`",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "cycle",
+      "project": "cycle-a",
+      "path": [
+        "project",
+        "dependsOn",
+        1
+      ],
+      "location": {
+        "file": "projects/cycle-a/project.nix",
+        "position": {
+          "line": 6,
+          "column": 5
+        }
+      },
+      "message": "makes a loop: `cycle-a` depends on `cycle-b`, which depends on `cycle-a`",
+      "help": "take one of these dependencies out, so the projects can be ordered",
+      "related": [
+        {
+          "location": {
+            "file": "projects/cycle-b/project.nix",
+            "position": {
+              "line": 6,
+              "column": 5
+            }
+          },
+          "message": "`cycle-b` depends on `cycle-a` here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "cycle",
+      "project": "cycle-steps",
+      "path": [
+        "steps",
+        "build",
+        "after",
+        0
+      ],
+      "location": {
+        "file": "projects/cycle-steps/project.nix",
+        "position": {
+          "line": 11,
+          "column": 7
+        }
+      },
+      "message": "makes a loop: `build` runs after `test`, which runs after `build`",
+      "help": "take one of these out of `after`, so the steps can be ordered",
+      "related": [
+        {
+          "location": {
+            "file": "projects/cycle-steps/project.nix",
+            "position": {
+              "line": 16,
+              "column": 7
+            }
+          },
+          "message": "`test` runs after `build` here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "duplicate",
+      "project": "duplicate-b",
+      "path": [
+        "commands",
+        "fmt"
+      ],
+      "location": {
+        "file": "projects/duplicate-b/project.nix",
+        "position": {
+          "line": 7,
+          "column": 3
+        }
+      },
+      "message": "is already declared by `duplicate-a`",
+      "help": "give each one a name of its own",
+      "related": [
+        {
+          "location": {
+            "file": "projects/duplicate-a/project.nix",
+            "position": {
+              "line": 7,
+              "column": 3
+            }
+          },
+          "message": "`duplicate-a` declares it here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "duplicate",
+      "project": "duplicate-b",
+      "path": [
+        "services",
+        "db"
+      ],
+      "location": {
+        "file": "projects/duplicate-b/project.nix",
+        "position": {
+          "line": 11,
+          "column": 3
+        }
+      },
+      "message": "is already declared by `duplicate-a`",
+      "help": "give each one a name of its own",
+      "related": [
+        {
+          "location": {
+            "file": "projects/duplicate-a/project.nix",
+            "position": {
+              "line": 11,
+              "column": 3
+            }
+          },
+          "message": "`duplicate-a` declares it here"
+        }
+      ]
+    }
+  ]
+}

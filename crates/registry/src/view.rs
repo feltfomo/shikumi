@@ -1,15 +1,21 @@
 //! the read-only registry viewer, as a subcommand a CLI registers: the project list, one project's
-//! detail, the whole document, or the published schema. it reads only what the producer hands it,
-//! so it refuses exactly the declarations every other entry point refuses.
+//! detail, the whole document, the findings, the serialized declarations, the published schemas
+//! and the declarations reference. it reads only what the producer hands it, so it refuses exactly
+//! the declarations every other entry point refuses, and renders their findings against the
+//! repository's own files.
 
 use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
-use crate::document::{self, Identifier, Project, Registry};
+use crate::contract::render_json;
+use crate::declarations;
+use crate::document::{self, Diagnostic, Identifier, Project, Registry, RegistryError};
 use crate::produce::{ProduceError, Producer};
+use crate::reference;
+use crate::render::{Sources, render};
 
 #[derive(Debug, Args)]
 pub struct RegistryArgs {
@@ -30,8 +36,43 @@ enum View {
     },
     #[command(about = "Print the registry document")]
     Document(Composition),
-    #[command(about = "Print the registry document's JSON schema")]
-    Schema,
+    #[command(about = "Check the declarations and print every finding")]
+    Check {
+        #[arg(
+            long,
+            value_enum,
+            default_value_t = Format::Text,
+            help = "Findings as text against the files, or the document that carries them as JSON"
+        )]
+        format: Format,
+        #[command(flatten)]
+        composition: Composition,
+    },
+    #[command(about = "Print the declarations as Shikumi read them, with their source positions")]
+    Declarations(Composition),
+    #[command(about = "Print a published JSON schema")]
+    Schema {
+        #[arg(
+            value_enum,
+            default_value_t = Schema::Registry,
+            help = "The registry document's schema, or the serialized declarations'"
+        )]
+        of: Schema,
+    },
+    #[command(about = "Print the declarations reference page")]
+    Reference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Schema {
+    Registry,
+    Declarations,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Format {
+    Text,
+    Json,
 }
 
 #[derive(Debug, Args)]
@@ -47,9 +88,30 @@ struct Composition {
 }
 
 impl Composition {
-    fn produce(&self) -> Result<Registry, ViewError> {
-        let focus = self.focus.as_deref().map(identifier).transpose()?;
-        Ok(Producer::from_environment()?.produce(&self.root, focus.as_ref())?)
+    fn focus(&self) -> Result<Option<Identifier>, ViewError> {
+        self.focus.as_deref().map(identifier).transpose()
+    }
+
+    fn document(&self) -> Result<document::Document, ViewError> {
+        Ok(Producer::from_environment()?.document(&self.root, self.focus()?.as_ref())?)
+    }
+
+    /// the accepted registry, or every finding rendered to `err` and the refusal.
+    fn produce(&self, err: &mut impl Write) -> Result<Registry, ViewError> {
+        match Producer::from_environment()?.produce(&self.root, self.focus()?.as_ref()) {
+            Err(ProduceError::Document(RegistryError::Refused(findings))) => {
+                Err(self.refuse(&findings, err))
+            }
+            other => Ok(other?),
+        }
+    }
+
+    fn refuse(&self, findings: &[Diagnostic], to: &mut impl Write) -> ViewError {
+        let rendered = render(findings, &mut Sources::new(&self.root));
+        match to.write_all(rendered.as_bytes()) {
+            Ok(()) => ViewError::Refused(findings.len()),
+            Err(error) => ViewError::Write(error),
+        }
     }
 }
 
@@ -57,18 +119,52 @@ fn identifier(name: &str) -> Result<Identifier, ViewError> {
     Identifier::new(name).map_err(|error| ViewError::Argument(error.to_string()))
 }
 
-pub fn run(args: &RegistryArgs, out: &mut impl Write) -> Result<(), ViewError> {
+/// runs one view, printing to `out` and rendering refused findings to `err`. the check view
+/// prints its findings to `out`, since they're what it was asked for.
+pub fn run(
+    args: &RegistryArgs,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> Result<(), ViewError> {
     let text = match &args.view {
-        View::List(composition) => list(&composition.produce()?),
+        View::List(composition) => list(&composition.produce(err)?),
         View::Show {
             project,
             composition,
         } => {
             let name = identifier(project)?;
-            show(&composition.produce()?, &name)?
+            show(&composition.produce(err)?, &name)?
         }
-        View::Document(composition) => composition.produce()?.to_json(),
-        View::Schema => document::render_schema(&document::schema()),
+        View::Document(composition) => composition.produce(err)?.to_json(),
+        View::Check {
+            format,
+            composition,
+        } => {
+            let document = composition.document()?;
+            let findings = document.diagnostics();
+            match format {
+                Format::Json => out
+                    .write_all(render_json(&document).as_bytes())
+                    .map_err(ViewError::Write)?,
+                Format::Text if findings.is_empty() => {}
+                Format::Text => return Err(composition.refuse(findings, out)),
+            }
+            if findings.is_empty() {
+                return Ok(());
+            }
+            return Err(ViewError::Refused(findings.len()));
+        }
+        View::Declarations(composition) => {
+            let producer = Producer::from_environment()?;
+            let (declarations, _) =
+                producer.declarations(&composition.root, composition.focus()?.as_ref())?;
+            render_json(&declarations)
+        }
+        View::Schema { of } => match of {
+            Schema::Registry => render_json(&document::schema()),
+            Schema::Declarations => render_json(&declarations::schema()),
+        },
+        View::Reference => reference::page(),
     };
     out.write_all(text.as_bytes()).map_err(ViewError::Write)
 }
@@ -188,6 +284,8 @@ pub enum ViewError {
     Argument(String),
     NoSuchProject(Identifier),
     Produce(ProduceError),
+    /// the declarations are refused; their findings are already rendered.
+    Refused(usize),
     Write(io::Error),
 }
 
@@ -203,6 +301,7 @@ impl std::fmt::Display for ViewError {
             Self::Argument(message) => f.write_str(message),
             Self::NoSuchProject(name) => write!(f, "no project `{name}` in the composition"),
             Self::Produce(error) => error.fmt(f),
+            Self::Refused(count) => f.write_str(&document::refusal_summary(*count)),
             Self::Write(error) => write!(f, "writing the output: {error}"),
         }
     }
@@ -214,8 +313,8 @@ impl std::error::Error for ViewError {}
 mod tests {
     use super::*;
 
-    // the fixtures are the declaration layer's own output for its basic fixture repository; the
-    // gate's `registry-viewer` check produces them again and fails if they differ.
+    // the document is what the packaged `shikumi` produces from the declaration layer's basic
+    // fixture repository on every Nix implementation, which the `registry-no-builds-*` checks hold.
     fn basic() -> Registry {
         Registry::from_json(include_bytes!("../fixtures/basic/document.json")).unwrap()
     }
@@ -255,7 +354,7 @@ mod tests {
             },
         };
         assert!(matches!(
-            run(&args, &mut Vec::new()),
+            run(&args, &mut Vec::new(), &mut Vec::new()),
             Err(ViewError::Argument(_))
         ));
     }

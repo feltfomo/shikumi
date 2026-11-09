@@ -1,0 +1,896 @@
+{
+  "schema": "shikumi.declarations",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "focus": null,
+  "manifest": {
+    "file": "shikumi.nix",
+    "value": {
+      "kind": "attrs",
+      "fields": {
+        "extensions": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 8,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "layout": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 8,
+                  "column": 3
+                },
+                "value": {
+                  "kind": "attrs",
+                  "fields": {
+                    "_tag": {
+                      "at": null,
+                      "value": {
+                        "kind": "string",
+                        "value": "record",
+                        "context": false
+                      }
+                    },
+                    "fields": {
+                      "at": null,
+                      "value": {
+                        "kind": "attrs",
+                        "fields": {
+                          "pages": {
+                            "at": {
+                              "file": "shikumi.nix",
+                              "line": 8,
+                              "column": 38
+                            },
+                            "value": {
+                              "kind": "attrs",
+                              "fields": {
+                                "required": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "bool",
+                                    "value": true
+                                  }
+                                },
+                                "type": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "attrs",
+                                    "fields": {
+                                      "_tag": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "string",
+                                          "value": "list",
+                                          "context": false
+                                        }
+                                      },
+                                      "element": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "attrs",
+                                          "fields": {
+                                            "_tag": {
+                                              "at": null,
+                                              "value": {
+                                                "kind": "string",
+                                                "value": "glob",
+                                                "context": false
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "nonEmpty": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "bool",
+                                          "value": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "team": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 9,
+                  "column": 3
+                },
+                "value": {
+                  "kind": "attrs",
+                  "fields": {
+                    "_tag": {
+                      "at": null,
+                      "value": {
+                        "kind": "string",
+                        "value": "record",
+                        "context": false
+                      }
+                    },
+                    "fields": {
+                      "at": null,
+                      "value": {
+                        "kind": "attrs",
+                        "fields": {
+                          "owner": {
+                            "at": {
+                              "file": "shikumi.nix",
+                              "line": 10,
+                              "column": 5
+                            },
+                            "value": {
+                              "kind": "attrs",
+                              "fields": {
+                                "required": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "bool",
+                                    "value": true
+                                  }
+                                },
+                                "type": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "attrs",
+                                    "fields": {
+                                      "_tag": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "string",
+                                          "value": "identifier",
+                                          "context": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "tier": {
+                            "at": {
+                              "file": "shikumi.nix",
+                              "line": 11,
+                              "column": 5
+                            },
+                            "value": {
+                              "kind": "attrs",
+                              "fields": {
+                                "required": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "bool",
+                                    "value": false
+                                  }
+                                },
+                                "type": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "attrs",
+                                    "fields": {
+                                      "_tag": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "string",
+                                          "value": "enum",
+                                          "context": false
+                                        }
+                                      },
+                                      "values": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "list",
+                                          "items": [
+                                            {
+                                              "kind": "string",
+                                              "value": "critical",
+                                              "context": false
+                                            },
+                                            {
+                                              "kind": "string",
+                                              "value": "standard",
+                                              "context": false
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "projects": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 3,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "core": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 4,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "libs/core",
+                  "context": false
+                }
+              },
+              "docs": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 6,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "docs",
+                  "context": false
+                }
+              },
+              "web": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 5,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "apps/web",
+                  "context": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "projects": {
+    "core": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "extensions": {
+            "at": {
+              "file": "libs/core/project.nix",
+              "line": 9,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "team": {
+                  "at": {
+                    "file": "libs/core/project.nix",
+                    "line": 9,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "owner": {
+                        "at": {
+                          "file": "libs/core/project.nix",
+                          "line": 10,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "platform",
+                          "context": false
+                        }
+                      },
+                      "tier": {
+                        "at": {
+                          "file": "libs/core/project.nix",
+                          "line": 11,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "critical",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "libs/core/project.nix",
+              "line": 5,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "libs/core/project.nix",
+                    "line": 7,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "core-team",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "libs/core/project.nix",
+                    "line": 6,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "The shared core library",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "libs/core/steps.nix",
+              "line": 2,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "build": {
+                  "at": {
+                    "file": "libs/core/steps.nix",
+                    "line": 3,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "libs/core/steps.nix",
+                          "line": 4,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Compile the library",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "libs/core/steps.nix",
+                          "line": 5,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "make",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                },
+                "test": {
+                  "at": {
+                    "file": "libs/core/steps.nix",
+                    "line": 7,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "after": {
+                        "at": {
+                          "file": "libs/core/steps.nix",
+                          "line": 10,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "build",
+                              "context": false
+                            }
+                          ]
+                        }
+                      },
+                      "description": {
+                        "at": {
+                          "file": "libs/core/steps.nix",
+                          "line": 8,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Run the unit tests",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "libs/core/steps.nix",
+                          "line": 9,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "make test",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "docs": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "commands": {
+            "at": {
+              "file": "docs/project.nix",
+              "line": 10,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "preview": {
+                  "at": {
+                    "file": "docs/project.nix",
+                    "line": 10,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "docs/project.nix",
+                          "line": 11,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Preview the docs",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "docs/project.nix",
+                          "line": 12,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "preview",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "extensions": {
+            "at": {
+              "file": "docs/project.nix",
+              "line": 9,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "layout": {
+                  "at": {
+                    "file": "docs/project.nix",
+                    "line": 9,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "pages": {
+                        "at": {
+                          "file": "docs/project.nix",
+                          "line": 9,
+                          "column": 3
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "pages/**/*.md",
+                              "context": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "docs/project.nix",
+              "line": 4,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "dependsOn": {
+                  "at": {
+                    "file": "docs/project.nix",
+                    "line": 7,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "web",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "docs/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "writers",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "docs/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "The documentation site",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "web": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "commands": {
+            "at": {
+              "file": "apps/web/project.nix",
+              "line": 20,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "serve": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 21,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "apps/web/project.nix",
+                          "line": 22,
+                          "column": 9
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Serve the site locally",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "apps/web/project.nix",
+                          "line": 23,
+                          "column": 9
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "serve --port 8080",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "extensions": {
+            "at": {
+              "file": "apps/web/project.nix",
+              "line": 26,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "team": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 26,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "owner": {
+                        "at": {
+                          "file": "apps/web/project.nix",
+                          "line": 26,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "web",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "apps/web/project.nix",
+              "line": 7,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "dependsOn": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 13,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "core",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 9,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "web-team",
+                        "context": false
+                      },
+                      {
+                        "kind": "string",
+                        "value": "design",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 8,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "The web front end",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "services": {
+            "at": {
+              "file": "apps/web/services.nix",
+              "line": 2,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "database": {
+                  "at": {
+                    "file": "apps/web/services.nix",
+                    "line": 2,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "apps/web/services.nix",
+                          "line": 3,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "A local database for development",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "apps/web/services.nix",
+                          "line": 4,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "database --data ./state",
+                          "context": false
+                        }
+                      },
+                      "restart": {
+                        "at": {
+                          "file": "apps/web/services.nix",
+                          "line": 5,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "on-failure",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "apps/web/project.nix",
+              "line": 15,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "bundle": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 15,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "apps/web/project.nix",
+                          "line": 16,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Bundle the site",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "apps/web/project.nix",
+                          "line": 17,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "bundle --release",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
