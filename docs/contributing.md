@@ -10,8 +10,8 @@ harness in `bench/` and the gate's checks in `tools/repo-check/`. The first crat
 `crates/`: derivation synthesis, the store transport over the worker protocol and the CLI,
 re-addressing and roots for built outputs, and the conformance harness that checks them against every
 supported Nix. And the declaration layer: `shikumi.lib` in `nix/declarations/` with its nix-unit
-tests, the registry document's crate in `crates/registry/`, and the `shikumi` command in
-`crates/cli/`, whose one subcommand is the registry viewer. The rest of Shikumi is designed and not
+tests, the registry document's crate in `crates/registry/`, which holds the checker, and the
+`shikumi` command in `crates/cli/`, whose one subcommand is the registry viewer. The rest of Shikumi is designed and not
 built; [the capability page](reference/capabilities.md) gives each part's status.
 
 ## The shell
