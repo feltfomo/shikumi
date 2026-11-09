@@ -3,13 +3,14 @@
 This page says how Shikumi is put together: who owns what, how a build and a shell entry flow, and
 which invariants hold. [The capability page](../reference/capabilities.md) says what Shikumi provides.
 
-Most of the product isn't built yet. Everything here is an accepted target unless it says it's current,
-and the sections marked **open** are mechanisms still being chosen, each with what decides it. What
-exists today is the repository's foundation (the gate, its checks in `tools/repo-check/`, and
-[the benchmark harness](#the-benchmark-harness)) and the base the core builds on: the path computation
+Everything here is an accepted target unless it says it's current, and the sections marked **open**
+are mechanisms still being chosen, each with what decides it. Three parts are current: the
+repository's foundation (the gate, its checks in `tools/repo-check/`, and
+[the benchmark harness](#the-benchmark-harness)); the base the core builds on (the path computation
 of [derivation synthesis](#derivation-synthesis), both implementations of
 [the store transport](#store-transport), and the re-addressing and rooting that
-[early cutoff](#early-cutoff) and [roots](#caches-and-roots) rest on. Those are current.
+[early cutoff](#early-cutoff) and [roots](#caches-and-roots) rest on); and
+[the declaration layer](#the-declaration-layer)'s composition and registry document.
 
 ## Shape
 
@@ -38,22 +39,66 @@ daemon, runs the host's evaluator, and drives unmodified compilers.
 
 ## The declaration layer
 
-- **Entry point.** `shikumi.lib.compose { root; manifest; }` is pure: it reads the manifest, imports
-  each listed project's declaration, and returns the registry document, the toolchain context and the
-  shell environments. nix-unit tests call it directly, with no CLI.
-- **Schema and validation.** Project declarations are user-authored modules in devenv's shape, so the
-  declaration layer is a module-system consumer, the case [the Nix style guide](../reference/nix-style.md#the-module-system)
-  reserves the module system for. Shikumi's own internal settings stay plain schemas. The schema is a
-  Nix module set with real required options. Validation runs one pass over every project and returns
-  diagnostics with option paths and defining files. The module system handles hundreds of records;
-  nothing per compile unit goes through it.
+The declaration layer is `shikumi.lib`, the Nix in `nix/declarations/`. It turns a repository's
+project declarations into the registry document, which the core reads, and into the toolchain context
+and shell environments. Composition, the schema, validation and the registry document are current. The
+toolchain context and shell environments are targets. The API keeps devenv's flat shape. Lexicon is a
+reference for how factories bind declarations, not a dependency.
+
+```mermaid
+graph LR
+  manifest["shikumi.nix<br/>manifest"] --> compose["compose.nix"]
+  decl["project.nix<br/>per project"] --> declaration["declaration.nix<br/>module evaluation"]
+  declaration --> schema["schema.nix<br/>checks, findings"]
+  compose --> declaration
+  compose --> doc["registry document"]
+  produce["shikumi-registry<br/>producer"] -->|"nix-instantiate,<br/>dummy:// store"| compose
+  doc --> refusal["Registry::from_json<br/>the refusal"]
+  refusal --> viewer["viewer"]
+```
+
+- **Owners.** `schema.nix` owns the vocabulary, `shikumi.lib.types`, and the check that turns every
+  bad definition into a finding. `declaration.nix` owns the declaration record and one project's module
+  evaluation. `compose.nix` owns the manifest, which declarations a composition reads, the checks
+  across records and the document. The `shikumi-registry` crate, in `crates/registry/`, owns the
+  document's Rust types and schema, the producer and the viewer, and the `shikumi` crate in
+  `crates/cli/` only parses arguments and lists subcommands.
+- **Entry point.** `shikumi.lib.compose { root; manifest; focus; }` is pure: it reads the manifest,
+  imports each composed project's declaration, and returns the registry document. nix-unit tests call
+  it directly, with no CLI.
+- **Schema.** Project declarations are user-authored modules in devenv's shape, so the layer is a
+  module-system consumer, the case [the Nix style guide](../reference/nix-style.md#the-module-system)
+  reserves the module system for. Every declaration option takes any value, so the module system only
+  collects definitions, follows imports and discharges `mkIf`, `mkMerge` and priorities. The
+  declaration record, written in `shikumi.lib.types`, then checks each field's definitions with their
+  files, and an unknown key lands in the freeform part, which records only who set it. A bad value is a
+  finding instead of an evaluation error, so one pass reports every finding. Repositories write their
+  extension schemas in the same vocabulary, and Shikumi's own internal settings stay plain schemas.
+  The trade-off is that the options are untyped, so an editor can't complete or check a declaration
+  from them; emitting an editor schema from the vocabulary is a target.
+- **One refusal.** The layer decides what's wrong; the document carries it. `Registry::from_json` is
+  the only way the Rust side gets a registry, and it refuses a document with a diagnostic, an unknown
+  field or another version. Every Rust entry point goes through it, so each refuses the same
+  declarations.
+- **Producing.** The producer runs the host's `nix-instantiate` on `produce.nix` against the
+  `dummy://` store, which holds nothing and accepts nothing. Import-from-derivation, `builtins.exec`,
+  plugins and experimental features are off on the command line, `nix-path` is empty, and the child
+  gets no environment at all. Every read of a build output through the evaluator fails there,
+  whatever the host's store holds, and nothing in the caller's environment, such as `PWD`, reaches a
+  declaration. It needs no daemon and no experimental feature on any implementation.
 - **Toolchain context.** The store paths and settings a backend needs to write `.drv` files: compiler,
   linker and builder paths, base environment, system and flags. It's small and changes only when the
-  lock or a declaration changes.
-- **No builds during evaluation.** Nothing in the layer forces a derivation output.
-
-The API keeps devenv's flat shape. Lexicon is a reference for how factories bind declarations, not a
-dependency.
+  lock or a declaration changes. Accepted target.
+- **No builds during evaluation.** Nothing in the layer forces a derivation output, and a declaration
+  that reads one through the evaluator is refused. A read by a plain path with no store context isn't
+  refused; that's the known gap under [Invariants](#invariants).
+- **Cost.** Global composition is linear in the projects: one module evaluation per declaration, one
+  pass over its definitions, and attribute-set joins across records, plus one sort of the manifest's
+  directories. A focused composition reads only its project's dependency closure. Nothing per compile
+  unit goes through the module system.
+- **Failure.** A finding is data, and the producer exits with every finding. An evaluation error that
+  isn't a finding, such as a declaration that doesn't parse or one that reads a build output, stops the
+  producer with the evaluator's message.
 
 ## The core
 
@@ -355,15 +400,16 @@ Its lifetime rules, each with a test that drives it:
 
 | Contract | Format | Owner | Readers |
 | --- | --- | --- | --- |
-| Registry document `shikumi.registry` | JSON with a schema, major and minor version | declaration layer produces it, the core validates it | every step and service, repository tools, the viewer |
+| Registry document `shikumi.registry` | JSON with a schema, `registry.schema.json` version 1.0 | declaration layer produces it, `shikumi-registry` validates it | every step and service, repository tools, the viewer |
 | Lock | JSON lines with a schema, one artifact per line, sorted and sharded | core | core, reviewers, grep |
 | Build trace | JSON lines with a schema | core | benchmarks, profiling tools |
 | Cache manifest | JSON with a schema | core | core on other machines |
 | Benchmark record | JSON lines with a schema, `record.schema.json` version 2 | benchmark harness | benchmark comparisons, the execution measurement, every backend's speed claims |
 | Overhead fixture graph | JSON with a schema, `overhead-units.schema.json` version 1 | benchmark harness | the execution measurement |
 
-A contract changes only through a reviewed design change, by a version bump its schema records. The
-two benchmark contracts are current; their schemas are tracked in `bench/schema/`.
+A contract changes only through a reviewed design change, by a version bump its schema records. Three
+contracts are current: the two benchmark contracts, with their schemas in `bench/schema/`, and the
+registry document, with its schema in `crates/registry/schema/`.
 
 The state database isn't a contract: no other program reads it. It's the core's internal state, with
 a versioned schema and migrations so a newer Shikumi opens an older database.
@@ -404,5 +450,11 @@ accepted targets like the rest of the page, except those marked current.
 | An asserted output is never shared until a sandboxed build confirms it | [provenance](#provenance) | the push path's refusal |
 | Daemon operations work as an untrusted user | [store transport](#store-transport) | a run as an untrusted test user on every implementation, through each transport; current for adding `.drv` files and sources, building, reading NARs, indirect roots and collecting garbage |
 | A worktree never has two supervisors or a lost service | [service supervisor](#service-supervisor) | the four lifetime tests |
-| No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | no check named yet |
-| The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | no check named yet |
+| No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, one per implementation, which plant output reads and a `builtins.exec` the producer has to refuse on every implementation; current, with the known gap below |
+| The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | the schema refusing a store reference or the repository's location, and the `registry-worktrees` gate check, which compares two worktrees and plants a leak it has to catch; current, with the known gap below |
+
+**Known gap in the last two rows.** A declaration can read a file by a plain path that carries no
+store context: a store path whose context it stripped, an untracked file, `.git`, a directory listing
+of the checkout, or the clock. Its document can then depend on the host's store or on the worktree,
+and neither check plants such a read. The gap is owned by [the context cache](#context-cache), whose
+evaluation from a store copy of exactly the keyed files makes pure evaluation possible.

@@ -8,8 +8,8 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | Area                                                          | What a repository gets                                    | Status          |
 | ------------------------------------------------------------- | --------------------------------------------------------- | --------------- |
 | [Where it runs](#where-it-runs)                               | CppNix, Determinate Nix and Lix, on Linux and macOS on Apple silicon | Accepted target |
-| [Declarations](#declarations)                                 | projects that declare themselves, validated in one pass   | Accepted target |
-| [Registry document](#registry-document)                       | one versioned JSON view of every project                  | Accepted target |
+| [Declarations](#declarations)                                 | projects that declare themselves, validated in one pass   | Current         |
+| [Registry document](#registry-document)                       | one versioned JSON view of every project                  | Current         |
 | [Packages and toolchains](#packages-overrides-and-toolchains) | one catalog, one owner per setting                        | Accepted target |
 | [Lock](#lock)                                                 | one lock for toolchains and third-party artifacts         | Accepted target |
 | [Build graph](#build-graph)                                   | per-stage caching in the store, early cutoff, queries     | Accepted target |
@@ -25,7 +25,7 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | [Formatting mechanism](#formatting-mechanism)                 | treefmt wrapped, or Shikumi's own                         | Open            |
 | [Rust tests](#testing-shikumi-itself)                         | Shikumi's own Rust tested under nextest                   | Current         |
 | [Store conformance](#store-conformance)                       | paths, transports and cutoff checked against all three    | Current         |
-| [Nix tests](#testing-shikumi-itself)                          | nix-unit tests of the Nix side                            | Accepted target |
+| [Nix tests](#testing-shikumi-itself)                          | nix-unit tests of the Nix side                            | Current         |
 | [Benchmark fixtures](#benchmark-fixtures)                     | seeded fixtures, the Cargo baseline, the result record    | Current         |
 | [Out of scope](#out-of-scope)                                 | what Shikumi deliberately doesn't do                      | Out of scope    |
 
@@ -47,43 +47,129 @@ needs no devenv either: Shikumi owns what devenv would have done.
 
 ## Declarations
 
-Status: accepted target.
+| Capability                                                        | Status          |
+| ----------------------------------------------------------------- | --------------- |
+| One manifest, one declaration file per project                    | Current         |
+| Schema with required fields, closed enumerations, typed paths and globs | Current  |
+| Validation in one pass, diagnostics as data                       | Current         |
+| Extension namespace with the repository's own schema              | Current         |
+| Global and focused compositions                                   | Current         |
+| The remainder as a scope                                          | Current         |
+| The remainder's own format, lint and checks                       | Accepted target |
+| Refusal at build, shell, verb, hook, service and query            | Accepted target |
+| Typed parameters, sensitive inputs, confirmation, timeout, locks  | Accepted target |
+| A generated command CLI with listing, planning and completions    | Accepted target |
 
-- **Projects declare themselves.** A project has one declaration file in its own directory. A
-  repository lists its projects in one manifest; nothing is discovered by scanning, and joining is a
-  reviewed change to that list.
-- **Schema.** Required fields have no silent default. Enumerations are closed. Paths and globs are
-  typed.
-- **Validation in one pass.** Every finding across every project is reported at once, each naming its
-  option path and the file that defined it. Every entry point refuses the same declarations: build,
-  shell, verb, hook, service and query.
-- **Diagnostics as data.** The registry document carries its diagnostics, and consumers refuse a
-  document with an error.
-- **Extension namespace.** A repository adds its own metadata, such as a project kind or a docs
-  layout, under a namespace it validates with its own schema. Shikumi passes it through to the
-  document unchanged.
-- **Compositions.** The global composition, at the repository root, holds every project plus the
-  remainder. A focused composition, inside a project, holds that project and the toolchains it names,
-  and runs that project's whole loop on a clean machine.
-- **The remainder.** Sources no project owns are a scope of their own, with their own format, lint and
-  checks, in the global composition.
-- **The API** keeps devenv's shape: a flat set of small records with one edge model. Optional fields
-  add typed parameters, sensitive inputs, confirmation, a timeout and locks, plus a generated CLI with
-  listing, planning and completions.
+A repository lists its projects in one manifest, `shikumi.nix` at its root, and each project has one
+declaration, `project.nix`, in its directory. Nothing is discovered by scanning, so joining is a
+reviewed change to the manifest.
 
-People author declarations in Nix, and the real Nix evaluator runs them.
+```nix
+# shikumi.nix
+{ types }:
+{
+  projects = {
+    core = "libs/core";
+    web = "apps/web";
+  };
+  extensions.team = types.record { owner = types.required types.identifier; };
+}
+```
+
+```nix
+# apps/web/project.nix
+{
+  project = {
+    summary = "The web front end";
+    maintainers = [ "web-team" ];
+    dependsOn = [ "core" ];
+  };
+  steps.bundle = {
+    description = "Bundle the site";
+    exec = "bundle --release";
+  };
+  commands.serve = {
+    description = "Serve the site locally";
+    exec = "serve --port 8080";
+  };
+  services.database = {
+    description = "A local database";
+    exec = "database --data ./state";
+    restart = "on-failure";
+  };
+  extensions.team.owner = "web";
+}
+```
+
+- **Declarations are modules** in devenv's flat shape: a flat set of small records, with `after` as
+  the one edge between steps. They can use `imports`, `mkIf`, `mkMerge` and priorities as in any
+  module.
+- **Schema.** What a declaration may contain is defined once, as the declaration record in
+  `nix/declarations/declaration.nix`, written in the vocabulary of `nix/declarations/schema.nix`. Those
+  two files are the reference; a reference page generated from them is a target. A required field
+  with no definition is a finding, never an empty default, enumerations are closed, and paths and
+  globs can't leave the repository. A string the document carries can't refer to a store path or
+  contain the repository's location.
+- **Validation in one pass.** `shikumi.lib.compose` checks every composed project at once and
+  returns every finding, each with its code, project, option path and defining files. It also checks
+  across records: a dependency names a listed project, a step runs after a step of its own project, a
+  command or service name has one owner across the composition, every listed directory has a
+  declaration, and no listed directory lies inside another.
+- **Diagnostics as data.** The registry document carries the findings. One that carries any has no
+  projects, and every consumer refuses it, naming every finding: the producer and the viewer share
+  one refusal, and the table's refusal row lists the entry points that are targets.
+- **Extension namespace.** A repository declares a schema per namespace in its manifest, written in
+  `shikumi.lib.types`, and projects put metadata under `extensions.<namespace>`. Shikumi checks it
+  against that schema and passes it to the document unchanged. A namespace without a schema is
+  refused.
+- **Compositions.** The global composition holds every project plus the remainder. A focused
+  composition holds one project and every project it depends on, transitively, and never reads any
+  other declaration.
+- **The remainder** is the scope of every source outside the listed directories.
+
+People author declarations in Nix, and the real Nix evaluator runs them. `shikumi.lib` takes nixpkgs'
+`lib` from whoever imports it, and the `shikumi` package evaluates with the nixpkgs its flake pins.
+Pinning that nixpkgs in Shikumi's own [lock](#lock) is an accepted target.
 
 ## Registry document
 
-Status: accepted target.
+| Capability                                                    | Status          |
+| ------------------------------------------------------------- | --------------- |
+| `shikumi.registry` version 1.0, with a published schema       | Current         |
+| No store paths, no command lines, identical across worktrees  | Limited, waits on the context cache |
+| No builds or reads of build outputs while producing it        | Limited, waits on the context cache |
+| No state written into the checkout                            | Current         |
+| A read-only viewer                                            | Current         |
+| Available as a store path to every step, command and service  | Accepted target |
 
-- A versioned JSON document, `shikumi.registry`, with a schema and a major and minor version.
-- It holds no store paths and no command strings, and two worktrees of one commit produce identical
-  bytes.
-- It's available as a store path to every step, command and service, in global and focused
-  compositions alike.
-- Producing it creates no state in the checkout.
-- A read-only viewer prints the project list, one project's detail, or the document.
+- **The document** is JSON with a published schema,
+  [`registry.schema.json`](../../crates/registry/schema/registry.schema.json), and a major and minor
+  version. A reader takes only the version it was built for, and refuses an unknown field.
+- **What it holds.** Each project's directory, summary, maintainers, dependencies, steps, commands,
+  services and extension metadata, the composition's focus, the remainder, and the diagnostics. A
+  step's or command's command line is declared and never copied in.
+- **Identical across worktrees.** Two worktrees of one commit, at any paths, produce the same bytes,
+  on every supported Nix. A string that carries the repository's location or a store path is
+  refused, and the evaluation sees no environment variables.
+- **No builds.** A declaration that imports, reads, hashes or tests for a build output is refused,
+  naming the derivation, and so is one that runs a program through `builtins.exec`, whatever the
+  caller's Nix configuration says.
+- **Limits.** A declaration that reads a file by a plain path the evaluator can't tie to a build
+  isn't refused. It can read a store path whose context it stripped, a file Git doesn't track,
+  `.git`, a directory listing of the checkout, or the clock, so its document can depend on the host's
+  store or on the worktree. Both rows wait on the context cache, which evaluates from a store copy of
+  exactly the tracked files a declaration may import.
+- **No state in the checkout.** Producing it writes nothing there.
+- **The viewer** prints the project list, one project's detail, the document or its schema, run from
+  the repository root or given `--root`. It refuses a document with a diagnostic the same way every
+  consumer does.
+
+```fish
+shikumi registry list
+shikumi registry show web
+shikumi registry document --focus web
+shikumi registry schema
+```
 
 ## Packages, overrides and toolchains
 
@@ -303,13 +389,15 @@ above, including a missing formatter failing only its own scope.
 
 | Capability                                                                           | Status          |
 | ------------------------------------------------------------------------------------ | --------------- |
-| Nix evaluation and module behavior tested in pure Nix with nix-unit and flake checks | Accepted target |
+| Nix evaluation and module behavior tested in pure Nix with nix-unit and flake checks | Current         |
 | Rust behavior tested with nextest                                                    | Current         |
 | Store paths, transports and cutoff conformance-tested against all three, on Linux    | Current         |
 | Benchmark fixtures                                                                   | Current         |
 
-The gate's `nextest` check runs every workspace test today. nix-unit is pinned in the flake, and the
-first Nix logic lands with its tests.
+The gate's `nextest` check runs every workspace test. Its `declarations` check runs the declaration
+layer's nix-unit tests against fixture repositories, and the `registry-no-builds-*` checks, one per
+Nix implementation, and `registry-worktrees` run the packaged `shikumi` on them, as
+[the root AGENTS.md](../../AGENTS.md#gates) lists.
 
 ### Store conformance
 
