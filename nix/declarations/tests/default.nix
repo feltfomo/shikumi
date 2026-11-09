@@ -1,6 +1,7 @@
 # nix-unit tests of the declaration layer, run by the gate's `declarations` check: the factory,
 # serialization and its source positions, the vocabulary, composition over the fixture repositories
-# beside this file, and the module adapter in each module system. whether a declaration is right is
+# beside this file, the catalog's reading of the pinned nixpkgs, and the module adapter in each
+# module system. whether a declaration is right is
 # the Rust checker's to say, so nothing here asserts a finding; `testNothingIsCheckedInNix` holds
 # that the layer passes every value through as written.
 {
@@ -14,7 +15,7 @@
 }:
 let
   lib = import (nixpkgs + "/lib");
-  shikumi = import ../. { inherit lib; };
+  shikumi = import ../. { inherit nixpkgs; };
   inherit (shikumi) types;
 
   composition =
@@ -39,6 +40,31 @@ let
 
   basic = compose ./fixtures/basic;
   broken = compose ./fixtures/broken;
+
+  # a catalog as the producer reads it for one system.
+  catalogIn =
+    root: system:
+    shikumi.catalog root {
+      file = "catalog/catalog.nix";
+      inherit system;
+    };
+  # a test catalog beside this file, on Linux.
+  testCatalog =
+    name:
+    shikumi.catalog ./catalogs/${name} {
+      file = "catalog.nix";
+      system = "x86_64-linux";
+    };
+  # each catalog read the tests use, bound once: every read imports the pinned nixpkgs again.
+  basicLinux = catalogIn ./fixtures/basic "x86_64-linux";
+  basicDarwin = catalogIn ./fixtures/basic "aarch64-darwin";
+  brokenLinux = catalogIn ./fixtures/broken "x86_64-linux";
+  overlayCatalog = testCatalog "overlay";
+  malformedCatalog = testCatalog "malformed";
+  standIns = testCatalog "stand-ins";
+
+  # what a catalog name's package is called, and what it propagates.
+  packageOf = read: name: read.graph.${read.packages.${name}};
 
   serialize = import ../serialize.nix {
     inherit lib;
@@ -384,6 +410,7 @@ in
       };
     expected = {
       fields = [
+        "catalog"
         "files"
         "manifest"
         "read"
@@ -583,6 +610,178 @@ in
     expectedError.type = "ThrownError";
   };
 
+  testThePlanNamesTheCatalogsFileAndItsSystems = {
+    expr = (composition ./fixtures/basic).catalog;
+    expected = {
+      file = "catalog/catalog.nix";
+      systems = [
+        "x86_64-linux"
+        "aarch64-darwin"
+      ];
+    };
+  };
+
+  testAManifestWithoutACatalogPlansNone = {
+    expr = (composition ./fixtures/lazy).catalog;
+    expected = null;
+  };
+
+  # what the conflict rule compares, read from the broken fixture's catalog: JDK 21 picked, and a
+  # Kotlin that propagates JDK 25. the two packages differ, and both are `openjdk` running as
+  # `java`, which is what the checker refuses on one path.
+  testTwoJdksAreTwoPackagesUnderOneNameAndOneProgram = {
+    expr =
+      let
+        read = brokenLinux;
+        jdk = packageOf read "jdk";
+        kotlin = packageOf read "kotlin";
+        propagated = map (name: read.graph.${name}) kotlin.propagates;
+        jdk25 = builtins.head (builtins.filter (package: package.pname == "openjdk") propagated);
+      in
+      {
+        different = read.packages.jdk != builtins.head kotlin.propagates;
+        names = [
+          jdk.pname
+          jdk25.pname
+        ];
+        programs = [
+          jdk.mainProgram
+          jdk25.mainProgram
+        ];
+        versions = map (version: builtins.substring 0 2 version) [
+          jdk.version
+          jdk25.version
+        ];
+      };
+    expected = {
+      different = true;
+      names = [
+        "openjdk"
+        "openjdk"
+      ];
+      programs = [
+        "java"
+        "java"
+      ];
+      versions = [
+        "21"
+        "25"
+      ];
+    };
+  };
+
+  # the basic fixture's Kotlin propagates the very JDK `jdk` names, so the path holds one JDK.
+  testAPackageThatPropagatesThePickedJdkPropagatesThatPackage = {
+    expr =
+      let
+        read = basicLinux;
+      in
+      builtins.elem read.packages.jdk (packageOf read "kotlin").propagates;
+    expected = true;
+  };
+
+  # one catalog name can be a different package on each system, as nixpkgs' JDK is on Apple
+  # silicon; the catalog reads each system's own package set. the byte comparison of the basic
+  # fixture pins the same reads on four implementations; this says what they mean, on one.
+  testEachSystemReadsItsOwnPackageSet = {
+    expr = basicLinux.packages.jdk != basicDarwin.packages.jdk;
+    expected = true;
+  };
+
+  testTheOverlayAppliesItsEntriesToThePackageSet = {
+    expr = (packageOf overlayCatalog "hello").pname;
+    expected = "hello-overridden";
+  };
+
+  # an entry without a build, or one whose build isn't a function, is left out of the overlay and
+  # reported by the checker; the package set still evaluates.
+  testAMalformedOverrideIsLeftOutOfTheOverlay = {
+    expr =
+      let
+        read = malformedCatalog;
+      in
+      {
+        hello = (packageOf read "hello").pname;
+        # a package that throws as it's read resolves to none, and the rest still read.
+        resolved = builtins.attrNames read.packages;
+        kinds = builtins.mapAttrs (_: field: field.value.kind) read.value.fields.overrides.value.fields;
+      };
+    expected = {
+      hello = "hello";
+      resolved = [ "hello" ];
+      kinds = {
+        cowsay = "string";
+        figlet = "attrs";
+        gone = "attrs";
+        hello = "attrs";
+      };
+    };
+  };
+
+  testPropagationIsReadFromEveryAttributeFlattenedAndOnlyForPackages = {
+    expr = standIns.graph;
+    expected = {
+      "outer-1.0" = {
+        pname = "outer";
+        version = "1.0";
+        mainProgram = null;
+        propagates = [
+          "inner-2.0"
+          "tool-3.0"
+        ];
+      };
+      "inner-2.0" = {
+        pname = "inner";
+        version = "2.0";
+        mainProgram = null;
+        propagates = [ "base-1.0" ];
+      };
+      "base-1.0" = {
+        pname = "base";
+        version = "1.0";
+        mainProgram = null;
+        propagates = [ ];
+      };
+      "tool-3.0" = {
+        pname = "tool";
+        version = "3.0";
+        mainProgram = "tool";
+        propagates = [ ];
+      };
+      "named-0.1" = {
+        pname = "custom";
+        version = "9";
+        mainProgram = null;
+        propagates = [ ];
+      };
+      plain = {
+        pname = "plain";
+        version = null;
+        mainProgram = null;
+        propagates = [ ];
+      };
+    };
+  };
+
+  testASystemNixpkgsDoesNotKnowReadsNoPackageSet = {
+    expr = catalogIn ./fixtures/basic "x86_64-nowhere";
+    expected = null;
+  };
+
+  # nothing in the catalog is checked in Nix either: its value comes out as the file wrote it.
+  testTheCatalogPassesThroughAsWritten = {
+    expr = read brokenLinux.value;
+    expected = written (toString ./fixtures/broken) (
+      import ./fixtures/broken/catalog/catalog.nix { inherit lib; }
+    );
+  };
+
+  # the catalog's read is what the producer prints, so it carries no store reference, though its
+  # packages are derivations.
+  testACatalogsReadCarriesNoStoreReference = {
+    expr = builtins.hasContext (builtins.toJSON basicLinux);
+    expected = false;
+  };
   # the layer reads its own copy of the table the registry's Rust defines.
   testTheLayerReadsTheRegistrysTable = {
     expr = builtins.fromJSON (builtins.readFile ../layer.json);
@@ -595,15 +794,46 @@ in
     let
       layer = builtins.fromJSON (builtins.readFile ../layer.json);
       composed = compose ./fixtures/arguments;
+      catalog = shikumi.catalog ./fixtures/arguments {
+        file = "catalog/catalog.nix";
+        system = "x86_64-linux";
+      };
     in
     {
       expr = {
         manifest = read composed.manifest.value.fields.offered.value;
         declaration = read composed.projects.app.value;
+        catalog = read catalog.value.fields.offered.value;
       };
       expected = {
         manifest = layer.manifest.arguments;
         declaration = layer.declaration.arguments;
+        catalog = layer.catalog.arguments;
+      };
+    };
+
+  # the layer reads the manifest's and the catalog's fields by the names the layer table lists: a
+  # repository written with exactly those names is read whole.
+  testTheLayerReadsTheFieldsTheTableNames =
+    let
+      composed = composition ./fixtures/reads;
+      catalogRead = shikumi.catalog ./fixtures/reads {
+        inherit (composed.catalog) file;
+        system = "x86_64-linux";
+      };
+    in
+    {
+      expr = {
+        inherit (composed) files catalog;
+        hello = (packageOf catalogRead "hello").pname;
+      };
+      expected = {
+        files.app = "app/project.nix";
+        catalog = {
+          file = "catalog/catalog.nix";
+          systems = [ "x86_64-linux" ];
+        };
+        hello = "hello-read";
       };
     };
 }

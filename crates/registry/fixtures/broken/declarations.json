@@ -10,10 +10,56 @@
     "value": {
       "kind": "attrs",
       "fields": {
+        "catalog": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 46,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "directory": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 47,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "catalog",
+                  "context": false
+                }
+              },
+              "systems": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 48,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "list",
+                  "items": [
+                    {
+                      "kind": "string",
+                      "value": "x86_64-linux",
+                      "context": false
+                    },
+                    {
+                      "kind": "string",
+                      "value": "x86_64-nowhere",
+                      "context": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
         "extensions": {
           "at": {
             "file": "shikumi.nix",
-            "line": 27,
+            "line": 33,
             "column": 3
           },
           "value": {
@@ -22,7 +68,7 @@
               "broken": {
                 "at": {
                   "file": "shikumi.nix",
-                  "line": 31,
+                  "line": 37,
                   "column": 5
                 },
                 "value": {
@@ -34,7 +80,7 @@
               "layout": {
                 "at": {
                   "file": "shikumi.nix",
-                  "line": 30,
+                  "line": 36,
                   "column": 5
                 },
                 "value": {
@@ -56,7 +102,7 @@
                           "pages": {
                             "at": {
                               "file": "shikumi.nix",
-                              "line": 30,
+                              "line": 36,
                               "column": 29
                             },
                             "value": {
@@ -120,7 +166,7 @@
               "meta": {
                 "at": {
                   "file": "shikumi.nix",
-                  "line": 29,
+                  "line": 35,
                   "column": 5
                 },
                 "value": {
@@ -140,7 +186,7 @@
               "sneaky": {
                 "at": {
                   "file": "shikumi.nix",
-                  "line": 35,
+                  "line": 41,
                   "column": 5
                 },
                 "value": {
@@ -149,7 +195,7 @@
                     "_tag": {
                       "at": {
                         "file": "shikumi.nix",
-                        "line": 36,
+                        "line": 42,
                         "column": 7
                       },
                       "value": {
@@ -164,7 +210,7 @@
               "team": {
                 "at": {
                   "file": "shikumi.nix",
-                  "line": 28,
+                  "line": 34,
                   "column": 5
                 },
                 "value": {
@@ -186,7 +232,7 @@
                           "owner": {
                             "at": {
                               "file": "shikumi.nix",
-                              "line": 28,
+                              "line": 34,
                               "column": 27
                             },
                             "value": {
@@ -230,7 +276,7 @@
         "owners": {
           "at": {
             "file": "shikumi.nix",
-            "line": 39,
+            "line": 45,
             "column": 3
           },
           "value": {
@@ -379,6 +425,42 @@
                   "context": false
                 }
               },
+              "jdk-again": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 28,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/jdk-again",
+                  "context": false
+                }
+              },
+              "jdk-owner": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 27,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/jdk-owner",
+                  "context": false
+                }
+              },
+              "jvm-app": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 29,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/jvm-app",
+                  "context": false
+                }
+              },
               "laundered": {
                 "at": {
                   "file": "shikumi.nix",
@@ -451,6 +533,42 @@
                   "context": false
                 }
               },
+              "overlay": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 30,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/overlay",
+                  "context": false
+                }
+              },
+              "path-variable": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 31,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/path-variable",
+                  "context": false
+                }
+              },
+              "picks": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 26,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/picks",
+                  "context": false
+                }
+              },
               "sound": {
                 "at": {
                   "file": "shikumi.nix",
@@ -515,6 +633,244 @@
           }
         }
       }
+    }
+  },
+  "catalog": {
+    "file": "catalog/catalog.nix",
+    "systems": {
+      "x86_64-linux": {
+        "value": {
+          "kind": "attrs",
+          "fields": {
+            "overlays": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 24,
+                "column": 3
+              },
+              "value": {
+                "kind": "list",
+                "items": [
+                  {
+                    "kind": "function"
+                  }
+                ]
+              }
+            },
+            "overrides": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 9,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "cowsay": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 19,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 21,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "reason": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 20,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "a newer cowsay",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "hello": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 15,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 17,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "release": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 16,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "never",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 10,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 13,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "reason": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 11,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "a Kotlin built on JDK 25",
+                            "context": false
+                          }
+                        },
+                        "release": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 12,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "the repository moves to JDK 25",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "packages": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 2,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "jdk": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 3,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "jdk21",
+                      "context": false
+                    }
+                  },
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 5,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "kotlin",
+                      "context": false
+                    }
+                  },
+                  "missing": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 7,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "no-such-package",
+                      "context": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "packages": {
+          "jdk": "openjdk-21.0.12.1+1",
+          "kotlin": "kotlin-2.4.21"
+        },
+        "graph": {
+          "kotlin-2.4.21": {
+            "pname": "kotlin",
+            "version": "2.4.21",
+            "mainProgram": null,
+            "propagates": [
+              "openjdk-25.0.5.0.3+1"
+            ]
+          },
+          "openjdk-21.0.12.1+1": {
+            "pname": "openjdk",
+            "version": "21.0.12.1+1",
+            "mainProgram": "java",
+            "propagates": [
+              "set-java-classpath-hook"
+            ]
+          },
+          "openjdk-25.0.5.0.3+1": {
+            "pname": "openjdk",
+            "version": "25.0.5.0.3+1",
+            "mainProgram": "java",
+            "propagates": [
+              "set-java-classpath-hook"
+            ]
+          },
+          "set-java-classpath-hook": {
+            "pname": "set-java-classpath-hook",
+            "version": "26.05pre-git",
+            "mainProgram": null,
+            "propagates": []
+          }
+        }
+      },
+      "x86_64-nowhere": null
     }
   },
   "projects": {
@@ -1735,6 +2091,355 @@
         }
       }
     },
+    "jdk-again": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/jdk-again/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/jdk-again/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/jdk-again/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Defines the JDK toolchain a second time",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "toolchains": {
+            "at": {
+              "file": "projects/jdk-again/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "jdk": {
+                  "at": {
+                    "file": "projects/jdk-again/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/jdk-again/project.nix",
+                          "line": 7,
+                          "column": 3
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Another JDK",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "jdk-owner": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/jdk-owner/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/jdk-owner/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/jdk-owner/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Owns the JDK toolchain",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "toolchains": {
+            "at": {
+              "file": "projects/jdk-owner/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "jdk": {
+                  "at": {
+                    "file": "projects/jdk-owner/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/jdk-owner/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "JDK 21",
+                          "context": false
+                        }
+                      },
+                      "env": {
+                        "at": {
+                          "file": "projects/jdk-owner/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "attrs",
+                          "fields": {
+                            "JAVA_HOME": {
+                              "at": {
+                                "file": "projects/jdk-owner/project.nix",
+                                "line": 10,
+                                "column": 5
+                              },
+                              "value": {
+                                "kind": "attrs",
+                                "fields": {
+                                  "package": {
+                                    "at": {
+                                      "file": "projects/jdk-owner/project.nix",
+                                      "line": 11,
+                                      "column": 7
+                                    },
+                                    "value": {
+                                      "kind": "string",
+                                      "value": "jdk",
+                                      "context": false
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "packages": {
+                        "at": {
+                          "file": "projects/jdk-owner/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "jdk",
+                              "context": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "jvm-app": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "env": {
+            "at": {
+              "file": "projects/jvm-app/project.nix",
+              "line": 12,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "JAVA_HOME": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 12,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "/opt/jdk",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "packages": {
+            "at": {
+              "file": "projects/jvm-app/project.nix",
+              "line": 11,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "kotlin",
+                  "context": false
+                }
+              ]
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/jvm-app/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "imports": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "jdk": {
+                        "at": {
+                          "file": "projects/jvm-app/project.nix",
+                          "line": 7,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "jdk-owner",
+                          "context": false
+                        }
+                      },
+                      "rust": {
+                        "at": {
+                          "file": "projects/jvm-app/project.nix",
+                          "line": 8,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "jdk-owner",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Uses the JDK toolchain and Kotlin, which brings another JDK",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "laundered": {
       "factory": true,
       "value": {
@@ -2032,6 +2737,293 @@
                   "value": {
                     "kind": "string",
                     "value": "Inside another project's directory",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "overlay": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "overrides": {
+            "at": {
+              "file": "projects/overlay/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "hello": {
+                  "at": {
+                    "file": "projects/overlay/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "package": {
+                        "at": {
+                          "file": "projects/overlay/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "function"
+                        }
+                      },
+                      "reason": {
+                        "at": {
+                          "file": "projects/overlay/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "a patched hello",
+                          "context": false
+                        }
+                      },
+                      "release": {
+                        "at": {
+                          "file": "projects/overlay/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "upstream takes the patch",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/overlay/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/overlay/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/overlay/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Brings an overlay of its own",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "path-variable": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "env": {
+            "at": {
+              "file": "projects/path-variable/project.nix",
+              "line": 8,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "PATH": {
+                  "at": {
+                    "file": "projects/path-variable/project.nix",
+                    "line": 8,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "/usr/bin",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/path-variable/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/path-variable/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/path-variable/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Sets the shell's path itself",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "picks": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "env": {
+            "at": {
+              "file": "projects/picks/project.nix",
+              "line": 11,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "TOOL_HOME": {
+                  "at": {
+                    "file": "projects/picks/project.nix",
+                    "line": 11,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "package": {
+                        "at": {
+                          "file": "projects/picks/project.nix",
+                          "line": 11,
+                          "column": 3
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "elsewhere",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "packages": {
+            "at": {
+              "file": "projects/picks/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "jdk",
+                  "context": false
+                },
+                {
+                  "kind": "string",
+                  "value": "nowhere",
+                  "context": false
+                }
+              ]
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/picks/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/picks/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/picks/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Picks packages the catalog doesn't name",
                     "context": false
                   }
                 }

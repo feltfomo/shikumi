@@ -13,6 +13,23 @@
         "core-team"
       ],
       "dependsOn": [],
+      "imports": {},
+      "packages": [],
+      "env": {},
+      "toolchains": {
+        "jdk": {
+          "description": "The JDK every JVM project builds and runs with",
+          "packages": [
+            "jdk"
+          ],
+          "env": {
+            "JAVA_HOME": {
+              "package": "jdk",
+              "path": null
+            }
+          }
+        }
+      },
       "steps": {
         "build": {
           "description": "Compile the library",
@@ -43,6 +60,14 @@
       "dependsOn": [
         "web"
       ],
+      "imports": {},
+      "packages": [
+        "mdbook"
+      ],
+      "env": {
+        "DOCS_PORT": "3000"
+      },
+      "toolchains": {},
       "steps": {},
       "commands": {
         "preview": {
@@ -68,6 +93,17 @@
       "dependsOn": [
         "core"
       ],
+      "imports": {
+        "jdk": "core"
+      },
+      "packages": [
+        "kotlin",
+        "nodejs"
+      ],
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "toolchains": {},
       "steps": {
         "bundle": {
           "description": "Bundle the site",
@@ -89,6 +125,24 @@
         "team": {
           "owner": "web"
         }
+      }
+    }
+  },
+  "catalog": {
+    "systems": [
+      "x86_64-linux",
+      "aarch64-darwin"
+    ],
+    "packages": {
+      "jdk": "jdk21",
+      "kotlin": "kotlin",
+      "mdbook": "mdbook",
+      "nodejs": "nodejs"
+    },
+    "overrides": {
+      "kotlin": {
+        "reason": "Kotlin runs on the JDK every JVM project builds with, not the one nixpkgs picks for it",
+        "release": "nixpkgs' own choice of JDK for Kotlin is the repository's"
       }
     }
   },

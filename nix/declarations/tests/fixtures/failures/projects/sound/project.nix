@@ -4,4 +4,5 @@ shikumi.project {
     summary = "Evaluates";
     maintainers = [ "someone" ];
   };
+  packages = [ "jdk" ];
 }

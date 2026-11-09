@@ -23,6 +23,12 @@
     cycle-a = "projects/cycle-a";
     cycle-b = "projects/cycle-b";
     cycle-steps = "projects/cycle-steps";
+    picks = "projects/picks";
+    jdk-owner = "projects/jdk-owner";
+    jdk-again = "projects/jdk-again";
+    jvm-app = "projects/jvm-app";
+    overlay = "projects/overlay";
+    path-variable = "projects/path-variable";
   };
   extensions = {
     team = types.record { owner = types.required types.identifier; };
@@ -37,4 +43,11 @@
     };
   };
   owners = { };
+  catalog = {
+    directory = "catalog";
+    systems = [
+      "x86_64-linux"
+      "x86_64-nowhere"
+    ];
+  };
 }

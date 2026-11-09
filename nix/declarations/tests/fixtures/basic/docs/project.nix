@@ -6,6 +6,8 @@ shikumi.project {
     maintainers = [ "writers" ];
     dependsOn = [ "web" ];
   };
+  packages = [ "mdbook" ];
+  env.DOCS_PORT = "3000";
   extensions.layout.pages = [ "pages/**/*.md" ];
   commands.preview = {
     description = "Preview the docs";

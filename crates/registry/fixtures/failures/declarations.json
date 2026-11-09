@@ -10,6 +10,47 @@
     "value": {
       "kind": "attrs",
       "fields": {
+        "catalog": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 19,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "directory": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 20,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "catalog",
+                  "context": false
+                }
+              },
+              "systems": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 21,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "list",
+                  "items": [
+                    {
+                      "kind": "string",
+                      "value": "x86_64-linux",
+                      "context": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
         "projects": {
           "at": {
             "file": "shikumi.nix",
@@ -163,6 +204,29 @@
                   "context": false
                 }
               }
+            }
+          }
+        }
+      }
+    }
+  },
+  "catalog": {
+    "file": "catalog/catalog.nix",
+    "systems": {
+      "x86_64-linux": {
+        "failure": {
+          "kind": "thrown",
+          "message": "the catalog's JDK isn't chosen yet",
+          "origin": {
+            "user": {
+              "frames": [
+                {
+                  "file": "catalog/catalog.nix",
+                  "line": 4,
+                  "column": 18
+                }
+              ],
+              "field": null
             }
           }
         }
@@ -359,6 +423,23 @@
       "value": {
         "kind": "attrs",
         "fields": {
+          "packages": {
+            "at": {
+              "file": "projects/sound/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "jdk",
+                  "context": false
+                }
+              ]
+            }
+          },
           "project": {
             "at": {
               "file": "projects/sound/project.nix",

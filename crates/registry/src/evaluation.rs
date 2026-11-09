@@ -1,8 +1,9 @@
 //! the `shikumi.evaluation` contract: what one evaluation of the declaration layer's `produce.nix`
 //! answers, and the requests that ask for it. the producer plans a composition with one evaluation
-//! and evaluates its projects in others, so each answer holds part of what the
-//! `shikumi.declarations` document assembles: the manifest and each listed project's declaration
-//! file, or some projects' declarations in the order they were asked for.
+//! and evaluates its projects and its catalog in others, so each answer holds part of what the
+//! `shikumi.declarations` document assembles: the manifest, each listed project's declaration file
+//! and the catalog's, some projects' declarations in the order they were asked for, or the catalog
+//! as one system reads it.
 
 use std::collections::BTreeMap;
 
@@ -10,7 +11,7 @@ use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 
 use crate::contract::{RelativePath, contract_name, contract_version, require_every_property};
-use crate::declarations::{Declaration, Manifest};
+use crate::declarations::{CatalogRead, Declaration, Manifest};
 
 contract_name!(EvaluationName, "shikumi.evaluation");
 
@@ -43,6 +44,9 @@ pub enum Answer {
     Plan(Plan),
     /// each asked project's declaration, in the order asked.
     Projects(Vec<Declaration>),
+    /// the catalog as the asked system reads it, or null for a system the pinned nixpkgs doesn't
+    /// know.
+    Catalog(Option<CatalogRead>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -53,6 +57,21 @@ pub struct Plan {
     /// every listed project's declaration file, relative to the root, or null where the
     /// manifest's entry names none.
     pub files: BTreeMap<String, Option<RelativePath>>,
+    /// the catalog the manifest declares, or null where it declares none.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub catalog: Option<PlannedCatalog>,
+}
+
+/// where the catalog is and which systems it's read for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = require_every_property)]
+pub struct PlannedCatalog {
+    /// the catalog's file, relative to the root, or null where its directory holds none.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub file: Option<RelativePath>,
+    /// the systems the manifest names, as far as they're text, in its order.
+    pub systems: Vec<String>,
 }
 
 /// a project to evaluate, by its name and the declaration file the plan gave it.
@@ -72,6 +91,11 @@ pub enum Request<'a> {
     /// one project, with every string in its declaration written out under a frame that names
     /// its field.
     Locate(&'a Project),
+    /// the catalog, read for one system.
+    Catalog {
+        file: &'a RelativePath,
+        system: &'a str,
+    },
 }
 
 impl Request<'_> {
@@ -97,8 +121,10 @@ impl Request<'_> {
             (Self::Plan {}, Answer::Plan(_)) => true,
             (Self::Evaluate(asked), Answer::Projects(projects)) => projects.len() == asked.len(),
             (Self::Locate(_), Answer::Projects(projects)) => projects.len() == 1,
-            (Self::Plan {}, Answer::Projects(_))
-            | (Self::Evaluate(_) | Self::Locate(_), Answer::Plan(_)) => false,
+            (Self::Catalog { .. }, Answer::Catalog(_)) => true,
+            (Self::Plan {}, Answer::Projects(_) | Answer::Catalog(_))
+            | (Self::Evaluate(_) | Self::Locate(_), Answer::Plan(_) | Answer::Catalog(_))
+            | (Self::Catalog { .. }, Answer::Plan(_) | Answer::Projects(_)) => false,
         }
     }
 }
@@ -140,6 +166,15 @@ mod tests {
             Request::Locate(&names[0]).to_json(),
             r#"{"locate":{"name":"a","file":"a/project.nix"}}"#
         );
+        let catalog = RelativePath::new("nix/catalog/catalog.nix").unwrap();
+        assert_eq!(
+            Request::Catalog {
+                file: &catalog,
+                system: "x86_64-linux"
+            }
+            .to_json(),
+            r#"{"catalog":{"file":"nix/catalog/catalog.nix","system":"x86_64-linux"}}"#
+        );
     }
 
     // `nix/declarations-no-builds.sh` asks the layer for a planted declaration without the
@@ -175,6 +210,7 @@ mod tests {
                 value: crate::declarations::Node::Null,
             },
             files: BTreeMap::new(),
+            catalog: None,
         });
         assert!(Request::Plan {}.answered_by(&plan));
         assert!(!Request::Plan {}.answered_by(&projects(1)));
@@ -184,6 +220,15 @@ mod tests {
         assert!(Request::Locate(&names[0]).answered_by(&projects(1)));
         assert!(!Request::Locate(&names[0]).answered_by(&projects(0)));
         assert_eq!(Request::Locate(&names[0]).name(), "locate");
+        let catalog = RelativePath::new("catalog/catalog.nix").unwrap();
+        let read = Request::Catalog {
+            file: &catalog,
+            system: "x86_64-linux",
+        };
+        assert!(read.answered_by(&Answer::Catalog(None)));
+        assert!(!read.answered_by(&projects(1)));
+        assert!(!Request::Plan {}.answered_by(&Answer::Catalog(None)));
+        assert_eq!(read.name(), "catalog");
     }
 
     #[test]
@@ -195,12 +240,17 @@ mod tests {
             "answer": {"projects": [{"factory": false, "value": {"kind": "null"}}]}
         });
         assert!(read(projects.clone()).is_ok());
+        let mut unknown = projects.clone();
+        unknown["answer"] = json!({"catalog": null});
+        assert!(matches!(
+            read(unknown).map(|evaluation| evaluation.answer),
+            Ok(Answer::Catalog(None))
+        ));
         let mut extra = projects.clone();
         extra["selected"] = json!([]);
         assert!(read(extra).is_err());
         let mut both = projects.clone();
-        both["answer"]["plan"] =
-            json!({"manifest": {"file": "shikumi.nix", "value": {"kind": "null"}}, "files": {}});
+        both["answer"]["plan"] = json!({"manifest": {"file": "shikumi.nix", "value": {"kind": "null"}}, "files": {}, "catalog": null});
         assert!(read(both).is_err());
         let mut extra = projects.clone();
         extra["answer"]["other"] = json!([]);

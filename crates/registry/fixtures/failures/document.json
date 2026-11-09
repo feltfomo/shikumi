@@ -6,8 +6,25 @@
   },
   "focus": null,
   "projects": null,
+  "catalog": null,
   "remainder": null,
   "diagnostics": [
+    {
+      "severity": "error",
+      "code": "thrown",
+      "project": null,
+      "path": [],
+      "location": {
+        "file": "catalog/catalog.nix",
+        "position": {
+          "line": 4,
+          "column": 18
+        }
+      },
+      "message": "evaluation threw an error: the catalog's JDK isn't chosen yet",
+      "help": null,
+      "related": []
+    },
     {
       "severity": "error",
       "code": "assertion",

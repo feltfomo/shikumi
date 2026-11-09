@@ -8,8 +8,9 @@ declarations.
 
 Status: the design is approved, and the product is partly built. The repository has its dev shell, its
 gate, the benchmark harness that every speed claim is measured with, and the core's first crates.
-Projects declare themselves and come out as one validated registry document, which `shikumi registry`
-prints. [The capability page](docs/reference/capabilities.md) gives each part's status.
+Projects declare themselves, pick their packages from one catalog and their toolchains from one
+owner each, and come out as one validated registry document, which `shikumi registry` prints.
+[The capability page](docs/reference/capabilities.md) gives each part's status.
 
 The docs start at [docs/README.md](docs/README.md).
 

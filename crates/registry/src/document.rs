@@ -11,7 +11,7 @@ use std::num::NonZeroU32;
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 
-pub use crate::contract::{Identifier, RelativePath, Text};
+pub use crate::contract::{AttributeName, AttributePath, Identifier, RelativePath, Text, Variable};
 use crate::contract::{
     NonEmpty, closed_set, contract_name, contract_version, require_every_property,
 };
@@ -37,10 +37,79 @@ pub struct Project {
     pub summary: Text,
     pub maintainers: NonEmpty<Text>,
     pub depends_on: Vec<Identifier>,
+    pub imports: BTreeMap<Identifier, Identifier>,
+    pub packages: Vec<Identifier>,
+    pub env: BTreeMap<Variable, EnvValue>,
+    pub toolchains: BTreeMap<Identifier, Toolchain>,
     pub steps: BTreeMap<Identifier, Step>,
     pub commands: BTreeMap<Identifier, Command>,
     pub services: BTreeMap<Identifier, Service>,
     pub extensions: BTreeMap<Identifier, serde_json::Value>,
+}
+
+/// a toolchain setting, such as the JDK or the Rust toolchain: what it puts on the path and in the
+/// environment of every project that uses it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = described::toolchain)]
+pub struct Toolchain {
+    pub description: Text,
+    pub packages: Vec<Identifier>,
+    pub env: BTreeMap<Variable, EnvValue>,
+}
+
+/// an environment variable's value: text as written, or a catalog package's location, which the
+/// toolchain context resolves to a store path the document never carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum EnvValue {
+    Text(String),
+    Package(PackageLocation),
+}
+
+/// where in a catalog package a variable points: the package, and a path inside it, or null for
+/// the package itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = require_every_property)]
+#[schemars(transform = described::location)]
+pub struct PackageLocation {
+    pub package: Identifier,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub path: Option<RelativePath>,
+}
+
+impl EnvValue {
+    /// the catalog package the value names, if it names one.
+    pub fn package(&self) -> Option<&Identifier> {
+        match self {
+            Self::Text(_) => None,
+            Self::Package(location) => Some(&location.package),
+        }
+    }
+}
+
+/// the repository's catalog: the systems its package set is read for, every package a shell or
+/// step may use, and the one overlay's entries.
+/// the serde shape of the vocabulary's [`vocabulary::document_catalog`], whose descriptions its
+/// schema takes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = described::catalog)]
+pub struct Catalog {
+    pub systems: NonEmpty<Text>,
+    pub packages: BTreeMap<Identifier, AttributePath>,
+    pub overrides: BTreeMap<AttributeName, Override>,
+}
+
+/// an entry of the catalog's overlay: why it exists and what lets it go. what it builds is
+/// declared and never copied here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = described::overrides)]
+pub struct Override {
+    pub reason: Text,
+    pub release: Text,
 }
 
 /// a step as the document carries it. its command line is declared and never copied here.
@@ -95,10 +164,10 @@ mod described {
         vocabulary::document_project(&BTreeMap::new())
     }
 
-    // the record each entry of one of a project's attribute sets holds.
-    fn entry(field: &str) -> Record {
-        match project_record().get(field).map(|field| &field.ty) {
-            Some(Type::Attrs(element)) => match &**element {
+    // the record each entry of one of a record's attribute sets holds.
+    fn entry(record: &Record, field: &str) -> Record {
+        match record.get(field).map(|field| &field.ty) {
+            Some(Type::Attrs { element, .. }) => match &**element {
                 Type::Record(record) => record.clone(),
                 _ => Record::default(),
             },
@@ -111,15 +180,34 @@ mod described {
     }
 
     pub(super) fn step(schema: &mut Schema) {
-        describe(schema, &entry(names::STEPS));
+        describe(schema, &entry(&project_record(), names::STEPS));
     }
 
     pub(super) fn command(schema: &mut Schema) {
-        describe(schema, &entry(names::COMMANDS));
+        describe(schema, &entry(&project_record(), names::COMMANDS));
+    }
+
+    pub(super) fn toolchain(schema: &mut Schema) {
+        describe(schema, &entry(&project_record(), names::TOOLCHAINS));
+    }
+
+    pub(super) fn location(schema: &mut Schema) {
+        describe(schema, &vocabulary::package_location());
+    }
+
+    pub(super) fn catalog(schema: &mut Schema) {
+        describe(schema, &vocabulary::document_catalog());
+    }
+
+    pub(super) fn overrides(schema: &mut Schema) {
+        describe(
+            schema,
+            &entry(&vocabulary::document_catalog(), names::OVERRIDES),
+        );
     }
 
     pub(super) fn service(schema: &mut Schema) {
-        describe(schema, &entry(names::SERVICES));
+        describe(schema, &entry(&project_record(), names::SERVICES));
     }
 }
 
@@ -156,10 +244,12 @@ closed_set! {
         UnknownOption = "unknown-option": "a field the record doesn't have",
         StoreReference = "store-reference": "text that refers to a store path",
         Location = "location": "text that contains the repository's location",
-        UnknownReference = "unknown-reference": "a name that refers to no project or step",
+        UnknownReference = "unknown-reference": "a name that refers to no project, step, catalog package or toolchain",
         Cycle = "cycle": "projects that depend on each other, or steps that run after each other, in a loop",
-        Duplicate = "duplicate": "a command or service name more than one project declares",
-        NoDeclaration = "no-declaration": "a listed directory with no declaration file",
+        Duplicate = "duplicate": "a name that has one owner defined twice: a command, service or toolchain more than one project declares, or an environment variable a shell gets from two places",
+        Conflict = "conflict": "two different packages on one shell's path, propagated inputs included, under one package name or program name",
+        SecondOverlay = "second-overlay": "an overlay outside the catalog's own, which is the repository's one overlay",
+        NoDeclaration = "no-declaration": "a listed directory with no declaration file, or a catalog directory with no catalog file",
         NotADeclaration = "not-a-declaration": "a declaration file that doesn't return a `shikumi.project` result",
         Overlap = "overlap": "a listed directory at or inside another project's directory",
         Syntax = "syntax": "a declaration or manifest file that isn't valid Nix",
@@ -195,7 +285,7 @@ impl fmt::Display for ShowPath<'_> {
                     if index > 0 {
                         f.write_str(".")?;
                     }
-                    if is_attribute_name(name) {
+                    if crate::contract::is_attribute(name) {
                         f.write_str(name)?;
                     } else {
                         write!(f, "{name:?}")?;
@@ -205,15 +295,6 @@ impl fmt::Display for ShowPath<'_> {
         }
         Ok(())
     }
-}
-
-// a name Nix accepts unquoted in an attribute path.
-fn is_attribute_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '\'' | '-'))
 }
 
 /// a line and column, both counted from 1 as the evaluator counts them.
@@ -315,6 +396,10 @@ pub struct Document {
     /// every composed project, or null when the document carries a diagnostic.
     #[serde(deserialize_with = "Option::deserialize")]
     pub(crate) projects: Option<BTreeMap<Identifier, Project>>,
+    /// the repository's catalog, or null when it declares none, and when the document carries a
+    /// diagnostic.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub(crate) catalog: Option<Catalog>,
     /// the global composition's remainder; null in a focused one, and when the document carries a
     /// diagnostic.
     #[serde(deserialize_with = "Option::deserialize")]
@@ -336,6 +421,7 @@ struct WrittenRegistry<'a> {
     version: Version,
     focus: Option<&'a Identifier>,
     projects: &'a BTreeMap<Identifier, Project>,
+    catalog: Option<&'a Catalog>,
     remainder: Option<&'a Remainder>,
     diagnostics: [Diagnostic; 0],
 }
@@ -353,6 +439,7 @@ pub enum Composition {
 pub struct Registry {
     composition: Composition,
     projects: BTreeMap<Identifier, Project>,
+    catalog: Option<Catalog>,
 }
 
 impl Registry {
@@ -374,6 +461,7 @@ impl Registry {
             version: Version,
             focus,
             projects: &self.projects,
+            catalog: self.catalog.as_ref(),
             remainder,
             diagnostics: [],
         })
@@ -385,6 +473,10 @@ impl Registry {
 
     pub fn projects(&self) -> &BTreeMap<Identifier, Project> {
         &self.projects
+    }
+
+    pub fn catalog(&self) -> Option<&Catalog> {
+        self.catalog.as_ref()
     }
 }
 
@@ -398,6 +490,7 @@ impl TryFrom<Document> for Registry {
             version: Version,
             focus,
             projects,
+            catalog,
             remainder,
             diagnostics,
         } = document;
@@ -450,11 +543,165 @@ impl TryFrom<Document> for Registry {
         if let Some(message) = first_loop(&projects) {
             return contract(message);
         }
+        let focus = match &composition {
+            Composition::Global { .. } => None,
+            Composition::Focused { project } => Some(project),
+        };
+        if let Some(message) = unresolved_package_or_toolchain(&projects, catalog.as_ref(), focus) {
+            return contract(message);
+        }
         Ok(Self {
             composition,
             projects,
+            catalog,
         })
     }
+}
+
+/// one place a shell takes packages and variables from: a project, or one of the toolchains it
+/// defines. every rule about a shell's packages and variables reads these, in the checker and in
+/// the refusal alike, so a new place a package can come from is added here once.
+#[derive(Debug, Clone, Copy)]
+pub struct ShellSource<'p> {
+    /// the project that declares it.
+    pub owner: &'p Identifier,
+    /// the toolchain it is, or none for the project itself.
+    pub toolchain: Option<&'p Identifier>,
+    pub packages: &'p [Identifier],
+    pub env: &'p BTreeMap<Variable, EnvValue>,
+}
+
+impl ShellSource<'_> {
+    /// every catalog package it names: on the path, then in its variables.
+    pub fn picks(&self) -> impl Iterator<Item = &Identifier> {
+        self.packages
+            .iter()
+            .chain(self.env.values().filter_map(EnvValue::package))
+    }
+}
+
+impl Project {
+    /// the project's own sources: itself, then each toolchain it defines, in name order.
+    pub fn sources<'p>(&'p self, owner: &'p Identifier) -> impl Iterator<Item = ShellSource<'p>> {
+        let own = ShellSource {
+            owner,
+            toolchain: None,
+            packages: &self.packages,
+            env: &self.env,
+        };
+        std::iter::once(own).chain(self.toolchains.iter().map(move |(name, toolchain)| {
+            ShellSource {
+                owner,
+                toolchain: Some(name),
+                packages: &toolchain.packages,
+                env: &toolchain.env,
+            }
+        }))
+    }
+}
+
+/// the sources of one composition's shell. the global shell holds every project and every
+/// toolchain; a focused one holds the focused project, the toolchains it defines and those it
+/// imports, each from its owner. either way they come in one order: every toolchain, by its
+/// project's name and then its own, and then every project, by name. a rule that keeps the first of
+/// two definitions keeps the same one in a focused shell as in the global shell, and reports the
+/// other at the same place; and since every project that uses a toolchain shares it, a clash
+/// between a toolchain and a project is reported at the project, whatever the names.
+pub fn shell<'p>(
+    projects: impl IntoIterator<Item = (&'p Identifier, &'p Project)>,
+    focus: Option<&Identifier>,
+) -> Vec<ShellSource<'p>> {
+    let projects: Vec<(&Identifier, &Project)> = projects.into_iter().collect();
+    let imports = focus.and_then(|focus| {
+        projects
+            .iter()
+            .find(|(name, _)| *name == focus)
+            .map(|(_, project)| &project.imports)
+    });
+    let (toolchains, own): (Vec<ShellSource<'p>>, Vec<ShellSource<'p>>) = projects
+        .iter()
+        .flat_map(|(name, project)| project.sources(name))
+        .filter(|source| {
+            let focused = focus.is_none_or(|focus| source.owner == focus);
+            let imported = source.toolchain.is_some_and(|toolchain| {
+                imports.is_some_and(|imports| imports.get(toolchain) == Some(source.owner))
+            });
+            focused || imported
+        })
+        .partition(|source| source.toolchain.is_some());
+    toolchains.into_iter().chain(own).collect()
+}
+
+/// who claims each name in one of the composition's name spaces, in name order: the commands,
+/// services or toolchains `names` reads from a project. a name with more than one claimant is
+/// declared twice.
+pub fn claims<'p, N>(
+    projects: impl IntoIterator<Item = (&'p Identifier, &'p Project)>,
+    names: impl Fn(&'p Project) -> N,
+) -> BTreeMap<&'p Identifier, Vec<&'p Identifier>>
+where
+    N: Iterator<Item = &'p Identifier>,
+{
+    let mut claims: BTreeMap<&Identifier, Vec<&Identifier>> = BTreeMap::new();
+    for (owner, project) in projects {
+        for name in names(project) {
+            claims.entry(name).or_default().push(owner);
+        }
+    }
+    claims
+}
+
+// the first rule on packages, toolchains and variables the document can decide that it breaks: a
+// package outside the catalog, a toolchain two projects define, an import its project doesn't
+// define, or a variable the composition's shell gets twice. a conflict between two packages needs
+// the catalog's package graph, which the document doesn't carry, so the checker alone holds it.
+fn unresolved_package_or_toolchain(
+    projects: &BTreeMap<Identifier, Project>,
+    catalog: Option<&Catalog>,
+    focus: Option<&Identifier>,
+) -> Option<String> {
+    let cataloged =
+        |package: &Identifier| catalog.is_some_and(|c| c.packages.contains_key(package));
+    for (name, project) in projects {
+        for source in project.sources(name) {
+            if let Some(package) = source.picks().find(|package| !cataloged(package)) {
+                return Some(format!(
+                    "`{name}` uses `{package}`, which isn't in the catalog"
+                ));
+            }
+        }
+    }
+    let owners = claims(projects, |project| project.toolchains.keys());
+    if let Some((toolchain, owners)) = owners.iter().find(|(_, owners)| owners.len() > 1) {
+        return Some(format!(
+            "toolchain `{toolchain}` is defined by both `{}` and `{}`",
+            owners[0], owners[1]
+        ));
+    }
+    for (name, project) in projects {
+        for (toolchain, owner) in &project.imports {
+            if owners
+                .get(toolchain)
+                .is_none_or(|owners| !owners.contains(&owner))
+            {
+                return Some(format!(
+                    "`{name}` imports toolchain `{toolchain}` from `{owner}`, which doesn't define it in the document"
+                ));
+            }
+        }
+    }
+    let mut defined: BTreeMap<&Variable, &Identifier> = BTreeMap::new();
+    for source in shell(projects, focus) {
+        for variable in source.env.keys() {
+            if let Some(first) = defined.insert(variable, source.owner) {
+                return Some(format!(
+                    "the shell gets `{variable}` from both `{first}` and `{}`",
+                    source.owner
+                ));
+            }
+        }
+    }
+    None
 }
 
 // the first loop in either ordering, which nothing could order. every reference resolves by now.
@@ -635,7 +882,18 @@ mod tests {
             }
             // a map keyed by a checked name is written with `patternProperties`, any other with
             // `additionalProperties`.
-            Type::Attrs(element) => {
+            // a variable's value is text or the location record it carries.
+            Type::EnvValue(location) => {
+                let branch = schema["anyOf"]
+                    .as_array()
+                    .and_then(|branches| {
+                        branches.iter().find(|branch| branch.get("$ref").is_some())
+                    })
+                    .unwrap_or(&Value::Null);
+                let record = Type::Record(location.clone());
+                found.extend(disagreements(&record, branch, defs, at));
+            }
+            Type::Attrs { element, .. } => {
                 let entry = schema["patternProperties"]
                     .as_object()
                     .and_then(|patterns| patterns.values().next())
@@ -656,12 +914,19 @@ mod tests {
     fn the_document_holds_exactly_the_fields_the_vocabulary_defines() {
         let schema = serde_json::to_value(schema()).unwrap();
         let project = vocabulary::Type::Record(vocabulary::document_project(&BTreeMap::new()));
-        let found = disagreements(
+        let mut found = disagreements(
             &project,
             &schema["$defs"]["Project"],
             &schema["$defs"],
             "project",
         );
+        let catalog = vocabulary::Type::Record(vocabulary::document_catalog());
+        found.extend(disagreements(
+            &catalog,
+            &schema["$defs"]["Catalog"],
+            &schema["$defs"],
+            "catalog",
+        ));
         assert_eq!(found, Vec::<String>::new());
         assert_eq!(
             schema["$defs"]["Step"]["properties"]["after"]["description"],
@@ -797,6 +1062,43 @@ mod tests {
     }
 
     #[test]
+    fn a_package_or_toolchain_that_resolves_nowhere_breaks_the_contract() {
+        let mut package = basic();
+        package["projects"]["web"]["packages"] = json!(["nowhere"]);
+        assert!(contract_message(&package).contains("`nowhere`, which isn't in the catalog"));
+
+        let mut variable = basic();
+        variable["projects"]["web"]["env"]["HOME_OF"] = json!({"package": "nowhere", "path": null});
+        assert!(contract_message(&variable).contains("`nowhere`, which isn't in the catalog"));
+
+        let mut uncataloged = basic();
+        uncataloged["catalog"] = Value::Null;
+        assert!(contract_message(&uncataloged).contains("which isn't in the catalog"));
+
+        let mut import = basic();
+        import["projects"]["web"]["imports"]["rust"] = json!("core");
+        assert!(contract_message(&import).contains("toolchain `rust` from `core`"));
+
+        // a variable the shell gets from a toolchain and again from a project that uses it.
+        let mut variable = basic();
+        variable["projects"]["web"]["env"]["JAVA_HOME"] = json!("/opt/jdk");
+        assert!(
+            contract_message(&variable).contains("gets `JAVA_HOME` from both `core` and `web`"),
+            "{}",
+            contract_message(&variable)
+        );
+
+        let mut twice = basic();
+        twice["projects"]["docs"]["toolchains"]["jdk"] =
+            twice["projects"]["core"]["toolchains"]["jdk"].clone();
+        assert!(
+            contract_message(&twice).contains("defined by both `core` and `docs`"),
+            "{}",
+            contract_message(&twice)
+        );
+    }
+
+    #[test]
     fn a_loop_in_either_ordering_breaks_the_contract() {
         let mut dependencies = basic();
         dependencies["projects"]["core"]["dependsOn"] = json!(["web"]);
@@ -848,7 +1150,7 @@ mod tests {
         let required = |value: &Value| -> Vec<String> {
             serde_json::from_value(value["required"].clone()).unwrap()
         };
-        for field in ["focus", "projects", "remainder", "diagnostics"] {
+        for field in ["focus", "projects", "catalog", "remainder", "diagnostics"] {
             assert!(required(&schema).iter().any(|r| r == field), "{field}");
         }
         let diagnostic = &schema["$defs"]["Diagnostic"];

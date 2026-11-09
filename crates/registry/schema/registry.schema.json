@@ -4,6 +4,17 @@
   "description": "every project a repository composes, as Shikumi's checker accepted them, or every finding that\nrefused them. serde reads this shape; the rules that span its fields are checked in the\nconversion to [`Registry`], so a consumer can only act on a document through them.",
   "type": "object",
   "properties": {
+    "catalog": {
+      "description": "the repository's catalog, or null when it declares none, and when the document carries a\ndiagnostic.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Catalog"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "diagnostics": {
       "type": "array",
       "items": {
@@ -54,6 +65,7 @@
   },
   "additionalProperties": false,
   "required": [
+    "catalog",
     "diagnostics",
     "focus",
     "projects",
@@ -62,6 +74,47 @@
     "version"
   ],
   "$defs": {
+    "AttributePath": {
+      "description": "a nixpkgs attribute path: attribute names, each one Nix takes unquoted, joined by `.`, such as `jdk21` or `nodePackages.prettier`",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_'-]*(\\.[A-Za-z_][A-Za-z0-9_'-]*)*$"
+    },
+    "Catalog": {
+      "description": "the repository's catalog: the systems its package set is read for, every package a shell or\nstep may use, and the one overlay's entries.\nthe serde shape of the vocabulary's [`vocabulary::document_catalog`], whose descriptions its\nschema takes.",
+      "type": "object",
+      "properties": {
+        "overrides": {
+          "description": "the one overlay on the pinned nixpkgs, an entry per attribute it replaces or adds",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_'-]*$": {
+              "$ref": "#/$defs/Override"
+            }
+          }
+        },
+        "packages": {
+          "description": "every package a shell or step may use, by the name projects pick it with, each its attribute path in the pinned nixpkgs",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/AttributePath"
+            }
+          }
+        },
+        "systems": {
+          "description": "the systems its package set is read for, each one the pinned nixpkgs knows, such as `x86_64-linux`",
+          "$ref": "#/$defs/NonEmpty_Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "systems",
+        "packages",
+        "overrides"
+      ]
+    },
     "Code": {
       "description": "what kind of rule a finding broke, as a stable name programs can match on. the message says it\nfor people and is free to change; a code isn't.",
       "type": "string",
@@ -76,6 +129,8 @@
         "unknown-reference",
         "cycle",
         "duplicate",
+        "conflict",
+        "second-overlay",
         "no-declaration",
         "not-a-declaration",
         "overlap",
@@ -167,6 +222,17 @@
         "severity"
       ]
     },
+    "EnvValue": {
+      "description": "an environment variable's value: text as written, or a catalog package's location, which the\ntoolchain context resolves to a store path the document never carries.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/PackageLocation"
+        }
+      ]
+    },
     "Identifier": {
       "description": "an identifier: a lowercase letter, then lowercase letters, digits and hyphens",
       "type": "string",
@@ -202,6 +268,51 @@
         "$ref": "#/$defs/Text"
       },
       "minItems": 1
+    },
+    "Override": {
+      "description": "an entry of the catalog's overlay: why it exists and what lets it go. what it builds is\ndeclared and never copied here.",
+      "type": "object",
+      "properties": {
+        "reason": {
+          "description": "why the entry exists",
+          "$ref": "#/$defs/Text"
+        },
+        "release": {
+          "description": "what lets it go",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "release"
+      ]
+    },
+    "PackageLocation": {
+      "description": "where in a catalog package a variable points: the package, and a path inside it, or null for\nthe package itself.",
+      "type": "object",
+      "properties": {
+        "package": {
+          "description": "the catalog package, by catalog name",
+          "$ref": "#/$defs/Identifier"
+        },
+        "path": {
+          "description": "a path inside it; null points at the package itself",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "path"
+      ]
     },
     "Position": {
       "description": "a line and column, both counted from 1 as the evaluator counts them.",
@@ -249,6 +360,16 @@
           "description": "the project's directory, as the manifest lists it",
           "$ref": "#/$defs/RelativePath"
         },
+        "env": {
+          "description": "environment variables its shells and steps get, by name",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/EnvValue"
+            }
+          }
+        },
         "extensions": {
           "description": "the repository's own metadata, one namespace per schema its manifest declares",
           "type": "object",
@@ -257,9 +378,26 @@
             "^[a-z][a-z0-9-]*$": true
           }
         },
+        "imports": {
+          "description": "toolchains it uses from other projects: each toolchain's name, and the project that defines it, which a focused composition takes with it",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Identifier"
+            }
+          }
+        },
         "maintainers": {
           "description": "who maintains it",
           "$ref": "#/$defs/NonEmpty_Text"
+        },
+        "packages": {
+          "description": "catalog packages on its shells' path, by catalog name",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
         },
         "services": {
           "description": "long-running workers, by a name unique across the composition",
@@ -284,6 +422,16 @@
         "summary": {
           "description": "what the project is, in one line",
           "$ref": "#/$defs/Text"
+        },
+        "toolchains": {
+          "description": "toolchain settings it owns, by a name no other project defines; other projects import them",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Toolchain"
+            }
+          }
         }
       },
       "additionalProperties": false,
@@ -292,6 +440,10 @@
         "summary",
         "maintainers",
         "dependsOn",
+        "imports",
+        "packages",
+        "env",
+        "toolchains",
         "steps",
         "commands",
         "services",
@@ -411,6 +563,39 @@
       "description": "non-blank text",
       "type": "string",
       "pattern": "\\S"
+    },
+    "Toolchain": {
+      "description": "a toolchain setting, such as the JDK or the Rust toolchain: what it puts on the path and in the\nenvironment of every project that uses it.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "what it does, in a phrase a person reads",
+          "$ref": "#/$defs/Text"
+        },
+        "env": {
+          "description": "environment variables every project that uses it gets",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/EnvValue"
+            }
+          }
+        },
+        "packages": {
+          "description": "catalog packages on the path of every project that uses it",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "packages",
+        "env"
+      ]
     },
     "Version": {
       "type": "object",

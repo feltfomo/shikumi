@@ -13,6 +13,21 @@
       "shikumi"
     ]
   },
+  "catalog": {
+    "name": "catalog.nix",
+    "arguments": [
+      "lib"
+    ]
+  },
+  "reads": {
+    "projects": "projects",
+    "catalog": "catalog",
+    "directory": "directory",
+    "systems": "systems",
+    "packages": "packages",
+    "overrides": "overrides",
+    "package": "package"
+  },
   "frames": {
     "value": "shikumi-value",
     "project": "shikumi-project",

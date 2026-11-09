@@ -1,15 +1,13 @@
 //! the declarations reference page, rendered from the vocabulary: the declaration record Shikumi
-//! checks, the manifest, the constructors a repository writes extension schemas with, and the
-//! finding codes. `docs/reference/declarations.md` is this page as tracked, and the gate's
+//! checks, the manifest, the catalog, the constructors a repository writes extension schemas with,
+//! and the finding codes. `docs/reference/declarations.md` is this page as tracked, and the gate's
 //! `declarations-reference` check fails when the two differ.
 
 use std::fmt::Write as _;
 
 use crate::document::Code;
-use crate::layer::{DECLARATION, MANIFEST};
-use crate::vocabulary::{
-    CONSTRUCTORS, Definition, Field, NAME_PLACEHOLDER, Presence, Scalar, Type, names,
-};
+use crate::layer::{CATALOG, DECLARATION, MANIFEST};
+use crate::vocabulary::{CONSTRUCTORS, Definition, Field, Key, Presence, Scalar, Type, names};
 
 const INTRODUCTION: &str = "\
 # Declarations reference
@@ -20,24 +18,42 @@ checks with, so it can't describe anything else; regenerate it rather than editi
 [The capability page](capabilities.md#declarations) says how declarations work.
 ";
 
-// the text before a definition's table, naming each file and field from its own definition.
+// the text before a definition's table, naming each file, field and placeholder from its own
+// definition.
 fn before(definition: Definition) -> String {
     match definition {
         Definition::Declaration => format!(
             "\n## The declaration record\n\n\
              A project's `{}` returns `shikumi.project` applied to a record with these fields. A \
              field marked required has no default; one with a default takes it when it's absent. \
-             `{NAME_PLACEHOLDER}` stands for any identifier.\n\n",
-            DECLARATION.name
+             `{}` stands for any identifier.\n\n",
+            DECLARATION.name,
+            Key::Identifier.placeholder()
+        ),
+        Definition::PackageLocation => format!(
+            "\nEach namespace under `{}` is checked against the schema the manifest declares for \
+             it, and a namespace without one is refused. A catalog package's location, the value of \
+             a variable under `{}`, has these fields:\n\n",
+            names::EXTENSIONS,
+            names::ENV
         ),
         Definition::Manifest => format!(
-            "\nEach namespace under `{}` is checked against the schema the manifest declares for \
-             it, and a namespace without one is refused.\n\
-             \n## The manifest\n\n\
+            "\n## The manifest\n\n\
              `{}` at the repository root, a record or a function of `{}` returning one.\n\n",
-            names::EXTENSIONS,
             MANIFEST.name,
             MANIFEST.head()
+        ),
+        Definition::Catalog => format!(
+            "\n## The catalog\n\n\
+             `{}` in the directory the manifest names, a record or a function of `{}` returning \
+             one. It names each package by its attribute path in the pinned nixpkgs, which Shikumi \
+             resolves for each of the manifest's systems with the catalog's `{}` applied as its one \
+             overlay. `{}` stands for the name of the nixpkgs attribute an entry replaces or \
+             adds.\n\n",
+            CATALOG.name,
+            CATALOG.head(),
+            names::OVERRIDES,
+            Key::Attribute.placeholder()
         ),
     }
 }
@@ -100,9 +116,9 @@ fn walk(prefix: &str, ty: &Type, visit: &mut impl FnMut(&str, &str, &Field)) {
         let path = format!("{prefix}{name}");
         let (shown, inner) = match &field.ty {
             Type::Record(_) => ("record".to_owned(), Some((format!("{path}."), &field.ty))),
-            Type::Attrs(element) if matches!(**element, Type::Record(_)) => (
+            Type::Attrs { key, element } if matches!(**element, Type::Record(_)) => (
                 "attribute set of records".to_owned(),
-                Some((format!("{path}.{NAME_PLACEHOLDER}."), &**element)),
+                Some((format!("{path}.{}.", key.placeholder()), &**element)),
             ),
             other => (other.describe(), None),
         };
@@ -181,15 +197,18 @@ mod tests {
     #[test]
     fn the_page_names_each_files_arguments_as_the_layer_offers_them() {
         let page = page();
-        for file in [MANIFEST, DECLARATION] {
+        for file in [MANIFEST, DECLARATION, CATALOG] {
             let named = format!("`{}`", file.name);
             assert!(page.contains(&named), "{named}");
         }
-        let head = format!("a function of `{}`", MANIFEST.head());
-        assert!(
-            page.contains(&head),
-            "the page doesn't say the manifest is {head}"
-        );
+        for file in [MANIFEST, CATALOG] {
+            let head = format!("a function of `{}`", file.head());
+            assert!(
+                page.contains(&head),
+                "the page doesn't say `{}` is {head}",
+                file.name
+            );
+        }
     }
 
     #[test]

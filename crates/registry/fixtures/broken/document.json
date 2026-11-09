@@ -6,6 +6,7 @@
   },
   "focus": null,
   "projects": null,
+  "catalog": null,
   "remainder": null,
   "diagnostics": [
     {
@@ -19,7 +20,7 @@
       "location": {
         "file": "shikumi.nix",
         "position": {
-          "line": 31,
+          "line": 37,
           "column": 5
         }
       },
@@ -38,7 +39,7 @@
       "location": {
         "file": "shikumi.nix",
         "position": {
-          "line": 35,
+          "line": 41,
           "column": 5
         }
       },
@@ -56,7 +57,7 @@
       "location": {
         "file": "shikumi.nix",
         "position": {
-          "line": 39,
+          "line": 45,
           "column": 3
         }
       },
@@ -112,6 +113,114 @@
           "message": "`dangling` is listed here"
         }
       ]
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": null,
+      "path": [
+        "catalog",
+        "systems",
+        1
+      ],
+      "location": {
+        "file": "shikumi.nix",
+        "position": {
+          "line": 48,
+          "column": 5
+        }
+      },
+      "message": "names `x86_64-nowhere`, which the pinned nixpkgs doesn't know as a system",
+      "help": "name systems as nixpkgs does, such as `x86_64-linux` or `aarch64-darwin`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "second-overlay",
+      "project": null,
+      "path": [
+        "overlays"
+      ],
+      "location": {
+        "file": "catalog/catalog.nix",
+        "position": {
+          "line": 24,
+          "column": 3
+        }
+      },
+      "message": "is a second overlay: the repository's one overlay is the catalog's `overrides`",
+      "help": "move each entry to the catalog's `overrides`, with a `reason` and a `release`",
+      "related": [
+        {
+          "location": {
+            "file": "catalog/catalog.nix",
+            "position": {
+              "line": 9,
+              "column": 3
+            }
+          },
+          "message": "the one overlay is here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "missing",
+      "project": null,
+      "path": [
+        "overrides",
+        "cowsay",
+        "release"
+      ],
+      "location": {
+        "file": "catalog/catalog.nix",
+        "position": {
+          "line": 19,
+          "column": 5
+        }
+      },
+      "message": "is required but not defined",
+      "help": "add `release = ...;`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "missing",
+      "project": null,
+      "path": [
+        "overrides",
+        "hello",
+        "reason"
+      ],
+      "location": {
+        "file": "catalog/catalog.nix",
+        "position": {
+          "line": 15,
+          "column": 5
+        }
+      },
+      "message": "is required but not defined",
+      "help": "add `reason = ...;`",
+      "related": []
+    },
+    {
+      "severity": "error",
+      "code": "unknown-reference",
+      "project": null,
+      "path": [
+        "packages",
+        "missing"
+      ],
+      "location": {
+        "file": "catalog/catalog.nix",
+        "position": {
+          "line": 7,
+          "column": 5
+        }
+      },
+      "message": "names `no-such-package`, which is no package in the pinned nixpkgs on x86_64-linux",
+      "help": "name a package nixpkgs builds, or add one through the catalog's `overrides`",
+      "related": []
     },
     {
       "severity": "error",
@@ -420,6 +529,54 @@
     },
     {
       "severity": "error",
+      "code": "second-overlay",
+      "project": "overlay",
+      "path": [
+        "overrides"
+      ],
+      "location": {
+        "file": "projects/overlay/project.nix",
+        "position": {
+          "line": 7,
+          "column": 3
+        }
+      },
+      "message": "is a second overlay: the repository's one overlay is the catalog's `overrides`",
+      "help": "move each entry to the catalog's `overrides`, with a `reason` and a `release`",
+      "related": [
+        {
+          "location": {
+            "file": "catalog/catalog.nix",
+            "position": {
+              "line": 9,
+              "column": 3
+            }
+          },
+          "message": "the one overlay is here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "invalid",
+      "project": "path-variable",
+      "path": [
+        "env",
+        "PATH"
+      ],
+      "location": {
+        "file": "projects/path-variable/project.nix",
+        "position": {
+          "line": 8,
+          "column": 3
+        }
+      },
+      "message": "is the shell's path, which the packages its sources pick make",
+      "help": null,
+      "related": []
+    },
+    {
+      "severity": "error",
       "code": "missing",
       "project": "split",
       "path": [
@@ -635,6 +792,98 @@
     },
     {
       "severity": "error",
+      "code": "unknown-reference",
+      "project": "jvm-app",
+      "path": [
+        "project",
+        "imports",
+        "rust"
+      ],
+      "location": {
+        "file": "projects/jvm-app/project.nix",
+        "position": {
+          "line": 8,
+          "column": 7
+        }
+      },
+      "message": "imports `rust` from `jdk-owner`, which defines no toolchain `rust`",
+      "help": "define it in `jdk-owner`'s `toolchains.rust`",
+      "related": [
+        {
+          "location": {
+            "file": "projects/jdk-owner/project.nix",
+            "position": {
+              "line": 7,
+              "column": 3
+            }
+          },
+          "message": "`jdk-owner`'s toolchains are here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "unknown-reference",
+      "project": "picks",
+      "path": [
+        "packages",
+        1
+      ],
+      "location": {
+        "file": "projects/picks/project.nix",
+        "position": {
+          "line": 7,
+          "column": 3
+        }
+      },
+      "message": "names `nowhere`, which isn't in the catalog",
+      "help": "add `nowhere` to the catalog's `packages`",
+      "related": [
+        {
+          "location": {
+            "file": "catalog/catalog.nix",
+            "position": {
+              "line": 2,
+              "column": 3
+            }
+          },
+          "message": "the catalog's packages are here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "unknown-reference",
+      "project": "picks",
+      "path": [
+        "env",
+        "TOOL_HOME",
+        "package"
+      ],
+      "location": {
+        "file": "projects/picks/project.nix",
+        "position": {
+          "line": 11,
+          "column": 3
+        }
+      },
+      "message": "names `elsewhere`, which isn't in the catalog",
+      "help": "add `elsewhere` to the catalog's `packages`",
+      "related": [
+        {
+          "location": {
+            "file": "catalog/catalog.nix",
+            "position": {
+              "line": 2,
+              "column": 3
+            }
+          },
+          "message": "the catalog's packages are here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
       "code": "cycle",
       "project": "cycle-a",
       "path": [
@@ -753,6 +1002,96 @@
             }
           },
           "message": "`duplicate-a` declares it here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "duplicate",
+      "project": "jdk-owner",
+      "path": [
+        "toolchains",
+        "jdk"
+      ],
+      "location": {
+        "file": "projects/jdk-owner/project.nix",
+        "position": {
+          "line": 7,
+          "column": 3
+        }
+      },
+      "message": "is already declared by `jdk-again`",
+      "help": "a toolchain has one owner; use `jdk-again`'s instead: `project.imports.jdk = \"jdk-again\";`",
+      "related": [
+        {
+          "location": {
+            "file": "projects/jdk-again/project.nix",
+            "position": {
+              "line": 7,
+              "column": 3
+            }
+          },
+          "message": "`jdk-again` declares it here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "duplicate",
+      "project": "jvm-app",
+      "path": [
+        "env",
+        "JAVA_HOME"
+      ],
+      "location": {
+        "file": "projects/jvm-app/project.nix",
+        "position": {
+          "line": 12,
+          "column": 3
+        }
+      },
+      "message": "is already defined by toolchain `jdk` of `jdk-owner`",
+      "help": "define each variable once: a project and the toolchains it uses share one environment",
+      "related": [
+        {
+          "location": {
+            "file": "projects/jdk-owner/project.nix",
+            "position": {
+              "line": 10,
+              "column": 5
+            }
+          },
+          "message": "toolchain `jdk` of `jdk-owner` defines it here"
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "code": "conflict",
+      "project": "jvm-app",
+      "path": [
+        "packages",
+        0
+      ],
+      "location": {
+        "file": "projects/jvm-app/project.nix",
+        "position": {
+          "line": 11,
+          "column": 3
+        }
+      },
+      "message": "puts `openjdk-25.0.5.0.3+1` on the path, from catalog package `kotlin` through the propagated inputs of `kotlin-2.4.21`, where `openjdk-21.0.12.1+1` from catalog package `jdk` already is: two packages named `openjdk` on x86_64-linux",
+      "help": "keep one of them on the path: pick packages that agree, or make them agree in the catalog's `overrides`",
+      "related": [
+        {
+          "location": {
+            "file": "projects/jdk-owner/project.nix",
+            "position": {
+              "line": 9,
+              "column": 5
+            }
+          },
+          "message": "toolchain `jdk` of `jdk-owner` puts `openjdk-21.0.12.1+1` on the path here"
         }
       ]
     }

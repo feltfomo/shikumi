@@ -16,4 +16,8 @@
     uneven = "projects/uneven";
     utf8 = "projects/utf8";
   };
+  catalog = {
+    directory = "catalog";
+    systems = [ "x86_64-linux" ];
+  };
 }

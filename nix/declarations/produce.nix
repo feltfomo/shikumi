@@ -1,9 +1,12 @@
 # what the producer evaluates through the host's `nix-instantiate`, once per request. every argument
 # arrives as a string, so nothing the caller passes is parsed as Nix. `nixpkgs` is the source tree
-# whose `lib` the layer runs on, and the only nixpkgs the evaluation sees. `request` is JSON, one of:
+# whose `lib` the layer runs on and whose package set the catalog reads, and the only nixpkgs the
+# evaluation sees. `request` is JSON, one of:
 #
-# - `{ "plan": { } }`: the serialized manifest, and each listed project's declaration file. no
-#   declaration is read.
+# - `{ "plan": { } }`: the serialized manifest, each listed project's declaration file, and the
+#   catalog's file and systems. no declaration is read, and no package set.
+# - `{ "catalog": { "file": <file>, "system": <system> } }`: the catalog read for one system, or
+#   null for a system the pinned nixpkgs doesn't know. no declaration is read.
 # - `{ "evaluate": [{ "name": <name>, "file": <file> }] }`: those projects' serialized declarations,
 #   read from the files the plan gave them, in the order asked. the manifest isn't read.
 # - `{ "locate": { "name": <name>, "file": <file> } }`: one project's serialized declaration, with
@@ -25,7 +28,7 @@ let
     toJSON
     ;
 
-  shikumi = import ./. { lib = import (/. + nixpkgs + "/lib"); };
+  shikumi = import ./. { nixpkgs = /. + nixpkgs; };
   layer = fromJSON (builtins.readFile ./layer.json);
   checkout = /. + root;
   asked = fromJSON request;
@@ -88,9 +91,11 @@ in
     if asked ? plan then
       {
         plan = {
-          inherit (composed) manifest files;
+          inherit (composed) manifest files catalog;
         };
       }
+    else if asked ? catalog then
+      { catalog = shikumi.catalog checkout asked.catalog; }
     else if asked ? evaluate then
       { projects = map evaluated asked.evaluate; }
     else

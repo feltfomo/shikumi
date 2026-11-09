@@ -11,8 +11,14 @@
 //! gets the failure, and the projects before and after it are evaluated again without it. the
 //! evaluator is pure and a failed evaluation leaves nothing behind, so a project comes out exactly
 //! as it would evaluated alone. a focused composition is evaluated the same way, in rounds: the
-//! focused project, then the listed projects its serialized `dependsOn` names, and so on, so its
-//! projects come out as the global composition gives them.
+//! focused project, then the listed projects its serialized `dependsOn` and toolchain imports name,
+//! and so on, so its projects come out as the global composition gives them.
+//!
+//! the catalog is the one evaluation that reads a package set. it's read once for each system the
+//! manifest names, by an evaluation of its own that goes to the front of the first round's queue,
+//! since a package set takes longest to evaluate, and runs beside the projects' batches. no
+//! declaration reads a package set, so the batches cost what they did without one, and a catalog
+//! that fails to evaluate is the catalog's finding while every project is still evaluated.
 //!
 //! cost grows linearly with the projects, since a batch reads its declaration files without the
 //! manifest and holds at most `BATCH_PROJECTS`. a failure a frame places in its project costs at
@@ -20,7 +26,8 @@
 //! evaluated at most twice, once in the batch that failed after it, once in the batch of those
 //! before the failure. a failure no frame places, such as a crash, halves its batch down to its
 //! project, so it costs about two batches and thirteen starts, and a project beside it is evaluated
-//! up to seven times. a focused composition takes one round per level of its dependencies.
+//! up to seven times. a focused composition takes one round per level of its dependencies. the
+//! catalog adds one evaluation per system, whatever the number of projects or batches.
 //!
 //! every evaluation is built by `command`, so none of them can reach a build or read a build's
 //! output through the evaluator. each runs against `dummy://`, a store that holds nothing and
@@ -56,11 +63,12 @@ use std::process::Command;
 use std::sync::{Condvar, Mutex, PoisonError};
 
 use crate::check;
+use crate::contract::RelativePath;
 use crate::declarations::{
-    Declaration, Declarations, Evaluated, Failed, Failure, FailureKind, Node,
+    Catalog, CatalogRead, Declaration, Declarations, Evaluated, Failed, Failure, FailureKind, Node,
 };
 use crate::document::{Document, Identifier, Registry, RegistryError};
-use crate::evaluation::{Answer, Evaluation, Project, Request};
+use crate::evaluation::{Answer, Evaluation, PlannedCatalog, Project, Request};
 use crate::failure::{Classified, Places, classify};
 use crate::layer::MANIFEST;
 use crate::vocabulary::names;
@@ -268,7 +276,9 @@ fn compose(
     let plan = match evaluator.evaluate(&Request::Plan {})? {
         Printed::Answer(printed) => match answer(&Request::Plan {}, &printed)? {
             Answer::Plan(plan) => plan,
-            Answer::Projects(_) => unreachable!("an answer is held to its request's shape"),
+            Answer::Projects(_) | Answer::Catalog(_) => {
+                unreachable!("an answer is held to its request's shape")
+            }
         },
         // the plan reads no declaration, so its failure is the manifest's, and with no manifest
         // there's nothing to compose.
@@ -277,12 +287,33 @@ fn compose(
             return Ok(Declarations::new(
                 focus.map(str::to_owned),
                 Evaluated::Failed(Failed { failure }),
+                None,
                 BTreeMap::new(),
             ));
         }
     };
 
+    // the catalog is read once per system, beside the first round's projects; a focused
+    // composition reads it whole too, since its shell's packages come from it.
+    let mut catalog_jobs: Vec<Job> = match &plan.catalog {
+        Some(PlannedCatalog {
+            file: Some(file),
+            systems,
+        }) => systems
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<&str>>()
+            .into_iter()
+            .map(|system| Job::Catalog {
+                file: file.clone(),
+                system: system.to_owned(),
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+
     let mut projects: BTreeMap<String, Entry> = BTreeMap::new();
+    let mut catalogs = BTreeMap::new();
     let mut next: BTreeSet<&str> = match focus {
         None => plan.files.keys().map(String::as_str).collect(),
         Some(focus) => plan
@@ -292,7 +323,7 @@ fn compose(
             .into_iter()
             .collect(),
     };
-    while !next.is_empty() {
+    while !next.is_empty() || !catalog_jobs.is_empty() {
         let mut pending = Vec::new();
         for name in next {
             match &plan.files[name] {
@@ -305,11 +336,16 @@ fn compose(
                 }
             }
         }
-        let evaluated = evaluate(evaluator, batches(pending, parallelism), parallelism)?;
+        // the catalog's evaluations go first: each reads a whole package set, the slowest
+        // evaluations of the run.
+        let mut jobs = std::mem::take(&mut catalog_jobs);
+        jobs.extend(batches(pending, parallelism).into_iter().map(Job::Projects));
+        let evaluated = evaluate(evaluator, jobs, parallelism)?;
+        catalogs.extend(evaluated.catalogs);
         // only the projects this round evaluated can name a project not yet composed.
         next = BTreeSet::new();
         if focus.is_some() {
-            for (_, entry) in &evaluated {
+            for (_, entry) in &evaluated.projects {
                 next.extend(
                     dependencies(entry)
                         .filter_map(|name| plan.files.get_key_value(name))
@@ -317,19 +353,26 @@ fn compose(
                 );
             }
         }
-        projects.extend(evaluated);
+        projects.extend(evaluated.projects);
         next.retain(|name| !projects.contains_key(*name));
     }
+    let catalog = plan.catalog.map(|planned| Catalog {
+        file: planned.file,
+        systems: catalogs,
+    });
     Ok(Declarations::new(
         focus.map(str::to_owned),
         Evaluated::Value(plan.manifest),
+        catalog,
         projects,
     ))
 }
 
-/// the projects a declaration names in `project.dependsOn`, as it serialized them: each string of
-/// a list there. a declaration that failed, or one in any other shape, names none, and the checker
-/// reports the shape.
+/// the projects a declaration names in `project.dependsOn` and as the owners in
+/// `project.imports`, as it serialized them: each string of the list, and each string value of the
+/// attribute set. a focused composition takes them with it, so it holds the projects its project
+/// depends on and the toolchains it names. a declaration that failed, or one in any other shape,
+/// names none, and the checker reports the shape.
 fn dependencies(entry: &Entry) -> impl Iterator<Item = &str> {
     fn field<'n>(node: &'n Node, name: &str) -> Option<&'n Node> {
         match node {
@@ -337,24 +380,31 @@ fn dependencies(entry: &Entry) -> impl Iterator<Item = &str> {
             _ => None,
         }
     }
-    let items = match entry {
+    let project = match entry {
         Some(Evaluated::Value(declaration)) if declaration.factory => {
             field(&declaration.value, names::PROJECT)
-                .and_then(|project| field(project, names::DEPENDS_ON))
-                .and_then(|depends| match depends {
-                    Node::List { items } => Some(items.as_slice()),
-                    _ => None,
-                })
         }
         _ => None,
     };
-    items
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|item| match item {
-            Node::String { value, .. } => Some(value.as_str()),
+    let depends = project
+        .and_then(|project| field(project, names::DEPENDS_ON))
+        .and_then(|depends| match depends {
+            Node::List { items } => Some(items.as_slice()),
             _ => None,
         })
+        .unwrap_or_default();
+    let imports = project
+        .and_then(|project| field(project, names::IMPORTS))
+        .and_then(|imports| match imports {
+            Node::Attrs { fields } => Some(fields.values().map(|field| &field.value)),
+            _ => None,
+        })
+        .into_iter()
+        .flatten();
+    depends.iter().chain(imports).filter_map(|item| match item {
+        Node::String { value, .. } => Some(value.as_str()),
+        _ => None,
+    })
 }
 
 /// the projects in contiguous batches: at least `BATCHES_PER_CORE` for each core, none of more than
@@ -386,30 +436,47 @@ fn batches(projects: Vec<Project>, parallelism: usize) -> Vec<Vec<Project>> {
 /// what one project came to.
 type Entry = Option<Evaluated<Declaration>>;
 
-/// the work the evaluating threads share: the batches still to evaluate, how many are being
-/// evaluated, what came back, and the first error, after which no batch starts.
+/// what the catalog came to on one system: null for a system the pinned nixpkgs doesn't know.
+type Read = Option<Evaluated<CatalogRead>>;
+
+/// one evaluation to run: a batch of projects, or the catalog for one system.
+#[derive(Debug)]
+enum Job {
+    Projects(Vec<Project>),
+    Catalog { file: RelativePath, system: String },
+}
+
+/// what a round of evaluations came to.
+#[derive(Debug, Default)]
+struct Results {
+    projects: Vec<(String, Entry)>,
+    catalogs: Vec<(String, Read)>,
+}
+
+/// the work the evaluating threads share: the jobs still to run, how many are running, what came
+/// back, and the first error, after which no job starts.
 struct Shared {
-    queue: VecDeque<Vec<Project>>,
+    queue: VecDeque<Job>,
     running: usize,
-    entries: Vec<(String, Entry)>,
+    results: Results,
     error: Option<ProduceError>,
 }
 
-/// evaluates every batch, at most `parallelism` at a time, and returns every project's entry.
+/// runs every job, at most `parallelism` at a time, and returns what each came to.
 fn evaluate(
     evaluator: &impl Evaluate,
-    batches: Vec<Vec<Project>>,
+    jobs: Vec<Job>,
     parallelism: usize,
-) -> Result<Vec<(String, Entry)>, ProduceError> {
-    let workers = parallelism.min(batches.len());
+) -> Result<Results, ProduceError> {
+    let workers = parallelism.min(jobs.len());
     let shared = Mutex::new(Shared {
-        queue: batches.into(),
+        queue: jobs.into(),
         running: 0,
-        entries: Vec::new(),
+        results: Results::default(),
         error: None,
     });
     let changed = Condvar::new();
-    // answers are read on Rayon's pool while the threads go on to the next batch; the scope waits
+    // answers are read on Rayon's pool while the threads go on to the next job; the scope waits
     // for every read before it returns.
     rayon::in_place_scope(|reads| {
         std::thread::scope(|threads| {
@@ -421,7 +488,7 @@ fn evaluate(
     let shared = recovered(shared.into_inner());
     match shared.error {
         Some(error) => Err(error),
-        None => Ok(shared.entries),
+        None => Ok(shared.results),
     }
 }
 
@@ -439,15 +506,15 @@ fn work<'s>(
 ) {
     let lock = || recovered(shared.lock());
     loop {
-        let batch = {
+        let job = {
             let mut state = lock();
             loop {
                 if state.error.is_some() {
                     return;
                 }
-                if let Some(batch) = state.queue.pop_front() {
+                if let Some(job) = state.queue.pop_front() {
                     state.running += 1;
-                    break batch;
+                    break job;
                 }
                 // an evaluation still running may yet hand back the projects around a failure.
                 if state.running == 0 {
@@ -456,7 +523,7 @@ fn work<'s>(
                 state = recovered(changed.wait(state));
             }
         };
-        let outcome = run_batch(evaluator, batch);
+        let outcome = run(evaluator, job);
         let mut state = lock();
         state.running -= 1;
         match outcome {
@@ -464,7 +531,7 @@ fn work<'s>(
                 let read = read_batch(names, &printed);
                 let mut state = lock();
                 match read {
-                    Ok(entries) => state.entries.extend(entries),
+                    Ok(entries) => state.results.projects.extend(entries),
                     Err(error) => {
                         state.error.get_or_insert(error);
                     }
@@ -472,17 +539,37 @@ fn work<'s>(
                 drop(state);
                 changed.notify_all();
             }),
+            Ok(Ran::Cataloged(file, system, printed)) => reads.spawn(move |_| {
+                let read = read_catalog(&file, &system, &printed);
+                let mut state = lock();
+                match read {
+                    Ok(read) => state
+                        .results
+                        .catalogs
+                        .push((system, read.map(Evaluated::Value))),
+                    Err(error) => {
+                        state.error.get_or_insert(error);
+                    }
+                }
+                drop(state);
+                changed.notify_all();
+            }),
+            Ok(Ran::CatalogFailed(system, failure)) => state
+                .results
+                .catalogs
+                .push((system, Some(Evaluated::Failed(Failed { failure })))),
             Ok(Ran::Failed {
                 project,
                 failure,
                 again,
             }) => {
                 state
-                    .entries
+                    .results
+                    .projects
                     .push((project, Some(Evaluated::Failed(Failed { failure }))));
-                state.queue.extend(again);
+                state.queue.extend(again.into_iter().map(Job::Projects));
             }
-            Ok(Ran::Split(halves)) => state.queue.extend(halves),
+            Ok(Ran::Split(halves)) => state.queue.extend(halves.into_iter().map(Job::Projects)),
             Err(error) => {
                 state.error.get_or_insert(error);
             }
@@ -492,10 +579,15 @@ fn work<'s>(
     }
 }
 
-/// what evaluating one batch came to: its answer, still to be read, or the project it failed in
-/// and the batches left to evaluate without it.
+/// what running one job came to: a batch's answer, still to be read, or the project it failed in
+/// and the batches left to evaluate without it; or the catalog's answer for a system, or its
+/// failure.
 enum Ran {
     Answered(Vec<Project>, Vec<u8>),
+    Cataloged(RelativePath, String, Vec<u8>),
+    /// the catalog failed to evaluate. the evaluation reads nothing but the catalog, so the failure
+    /// is the catalog's wherever its frames lie.
+    CatalogFailed(String, Failure),
     Failed {
         project: String,
         failure: Failure,
@@ -503,6 +595,24 @@ enum Ran {
     },
     /// a failure no frame placed: the batch, halved, to evaluate again.
     Split(Vec<Vec<Project>>),
+}
+
+fn run(evaluator: &impl Evaluate, job: Job) -> Result<Ran, ProduceError> {
+    match job {
+        Job::Projects(batch) => run_batch(evaluator, batch),
+        Job::Catalog { file, system } => {
+            let request = Request::Catalog {
+                file: &file,
+                system: &system,
+            };
+            Ok(match evaluator.evaluate(&request)? {
+                Printed::Answer(printed) => Ran::Cataloged(file, system, printed),
+                Printed::Error(stderr) => {
+                    Ran::CatalogFailed(system, classify(&stderr, evaluator.places()).failure)
+                }
+            })
+        }
+    }
 }
 
 fn run_batch(evaluator: &impl Evaluate, batch: Vec<Project>) -> Result<Ran, ProduceError> {
@@ -574,13 +684,28 @@ fn read_batch(
 ) -> Result<Vec<(String, Entry)>, ProduceError> {
     let declarations = match answer(&Request::Evaluate(&projects), printed)? {
         Answer::Projects(declarations) => declarations,
-        Answer::Plan(_) => unreachable!("an answer is held to its request's shape"),
+        Answer::Plan(_) | Answer::Catalog(_) => {
+            unreachable!("an answer is held to its request's shape")
+        }
     };
     Ok(projects
         .into_iter()
         .zip(declarations)
         .map(|(project, declaration)| (project.name, Some(Evaluated::Value(declaration))))
         .collect())
+}
+
+fn read_catalog(
+    file: &RelativePath,
+    system: &str,
+    printed: &[u8],
+) -> Result<Option<CatalogRead>, ProduceError> {
+    match answer(&Request::Catalog { file, system }, printed)? {
+        Answer::Catalog(read) => Ok(read),
+        Answer::Plan(_) | Answer::Projects(_) => {
+            unreachable!("an answer is held to its request's shape")
+        }
+    }
 }
 
 fn utf8(path: &Path) -> Result<String, ProduceError> {
@@ -721,8 +846,16 @@ mod tests {
             args[..request_at].to_vec()
         };
         let planned = pinned(&plan());
+        let catalog = RelativePath::new("catalog/catalog.nix").unwrap();
         assert_eq!(pinned(&Request::Evaluate(&names)), planned);
         assert_eq!(pinned(&Request::Locate(&names[0])), planned);
+        assert_eq!(
+            pinned(&Request::Catalog {
+                file: &catalog,
+                system: "x86_64-linux"
+            }),
+            planned
+        );
     }
 
     #[test]
@@ -790,6 +923,11 @@ mod tests {
     /// depends on, and every evaluation the producer asked for.
     struct Scripted {
         projects: BTreeMap<String, (Behaves, Vec<String>)>,
+        /// each project's toolchain imports, by the owner each names.
+        imports: BTreeMap<String, Vec<String>>,
+        /// the systems the manifest's catalog names, if it declares one.
+        catalog: Option<Vec<&'static str>>,
+        catalog_fails: bool,
         manifest_fails: bool,
         garbage: bool,
         /// a project whose evaluation can't even be started.
@@ -811,6 +949,9 @@ mod tests {
                         ((*name).to_owned(), (*behaves, depends))
                     })
                     .collect(),
+                imports: BTreeMap::new(),
+                catalog: None,
+                catalog_fails: false,
                 manifest_fails: false,
                 garbage: false,
                 unrunnable: None,
@@ -885,9 +1026,24 @@ mod tests {
                 .iter()
                 .map(|d| serde_json::json!({"kind": "string", "value": d, "context": false}))
                 .collect();
+            let string = |value: &str| serde_json::json!({"kind": "string", "value": value, "context": false});
+            let imports: serde_json::Map<String, serde_json::Value> = self
+                .imports
+                .get(name)
+                .into_iter()
+                .flatten()
+                .enumerate()
+                .map(|(index, owner)| {
+                    (
+                        format!("t{index}"),
+                        serde_json::json!({"at": null, "value": string(owner)}),
+                    )
+                })
+                .collect();
             serde_json::json!({"factory": true, "value": {"kind": "attrs", "fields": {
                 "project": {"at": null, "value": {"kind": "attrs", "fields": {
-                    "dependsOn": {"at": null, "value": {"kind": "list", "items": depends}}
+                    "dependsOn": {"at": null, "value": {"kind": "list", "items": depends}},
+                    "imports": {"at": null, "value": {"kind": "attrs", "fields": imports}}
                 }}}
             }}})
         }
@@ -910,9 +1066,13 @@ mod tests {
                         .keys()
                         .map(|name| (name, format!("{name}/project.nix")))
                         .collect();
+                    let catalog = self.catalog.as_ref().map(|systems| {
+                        serde_json::json!({"file": "catalog/catalog.nix", "systems": systems})
+                    });
                     Self::answer(serde_json::json!({"plan": {
                         "manifest": {"file": "shikumi.nix", "value": {"kind": "null"}},
-                        "files": files
+                        "files": files,
+                        "catalog": catalog
                     }}))
                 }
                 Request::Evaluate(names) => {
@@ -929,6 +1089,24 @@ mod tests {
                         .map(|project| self.declaration(&project.name))
                         .collect();
                     Self::answer(serde_json::json!({ "projects": declarations }))
+                }
+                Request::Catalog { system, .. } => {
+                    if self.catalog_fails {
+                        return Self::error(
+                            None,
+                            &["while calling the 'throw' builtin\n         at /repo/catalog/catalog.nix:4:5:"
+                                .to_owned()],
+                            "the catalog threw",
+                        );
+                    }
+                    if *system == "unknown-system" {
+                        return Self::answer(serde_json::json!({"catalog": null}));
+                    }
+                    Self::answer(serde_json::json!({"catalog": {
+                        "value": {"kind": "attrs", "fields": {}},
+                        "packages": {},
+                        "graph": {}
+                    }}))
                 }
                 Request::Locate(project) => match self.behaves(&project.name) {
                     Behaves::InvalidUtf8 => Self::utf8(&project.name, true),
@@ -975,7 +1153,12 @@ mod tests {
                 format!("evaluate {}", names.join(","))
             }
             Request::Locate(project) => format!("locate {}", project.name),
+            Request::Catalog { system, .. } => format!("catalog {system}"),
         }
+    }
+
+    fn jobs(batches: Vec<Vec<Project>>) -> Vec<Job> {
+        batches.into_iter().map(Job::Projects).collect()
     }
 
     fn entries(declarations: &Declarations) -> BTreeMap<String, String> {
@@ -990,8 +1173,9 @@ mod tests {
     fn alone(scripted: &Scripted) -> BTreeMap<String, String> {
         let names: Vec<String> = scripted.projects.keys().cloned().collect();
         let each: Vec<Vec<Project>> = names.iter().map(|name| vec![project(name)]).collect();
-        evaluate(scripted, each, 1)
+        evaluate(scripted, jobs(each), 1)
             .unwrap()
+            .projects
             .into_iter()
             .map(|(name, entry)| (name, serde_json::to_string(&entry).unwrap()))
             .collect()
@@ -1048,8 +1232,9 @@ mod tests {
             ("c", Behaves::Evaluates, &[]),
         ]);
         let batch = vec![project("a"), project("b"), project("c")];
-        let entries: BTreeMap<String, Entry> = evaluate(&scripted, vec![batch], 1)
+        let entries: BTreeMap<String, Entry> = evaluate(&scripted, jobs(vec![batch]), 1)
             .unwrap()
+            .projects
             .into_iter()
             .collect();
         let Some(Some(Evaluated::Failed(failed))) = entries.get("b") else {
@@ -1241,11 +1426,110 @@ mod tests {
         scripted.unrunnable = Some("p03");
         let each: Vec<Vec<Project>> = names.iter().map(|name| vec![project(name)]).collect();
         assert!(matches!(
-            evaluate(&scripted, each, 1),
+            evaluate(&scripted, jobs(each), 1),
             Err(ProduceError::NoEvaluator)
         ));
         let requests = scripted.requests.lock().unwrap().clone();
         assert_eq!(requests.last().unwrap(), "evaluate p03");
         assert_eq!(requests.len(), 4);
+    }
+
+    // a package set is the costliest thing a run evaluates, so it's read once per system, whatever
+    // the number of batches, and queued ahead of the batches that run beside it.
+    #[test]
+    fn the_catalog_is_read_once_per_system_first_and_beside_the_projects() {
+        let names: Vec<String> = (0..40).map(|i| format!("p{i:02}")).collect();
+        let projects: Vec<(&str, Behaves, &[&str])> = names
+            .iter()
+            .map(|name| (name.as_str(), Behaves::Evaluates, &[][..]))
+            .collect();
+        let mut scripted = Scripted::new(&projects);
+        scripted.catalog = Some(vec!["x86_64-linux", "aarch64-darwin", "x86_64-linux"]);
+        // one at a time, so the order requests were made in is the order they were queued in.
+        let declarations = compose(&scripted, None, 1).unwrap();
+        let requests = scripted.requests.lock().unwrap().clone();
+        let catalogs: Vec<&String> = requests
+            .iter()
+            .filter(|request| request.starts_with("catalog "))
+            .collect();
+        assert_eq!(catalogs, ["catalog aarch64-darwin", "catalog x86_64-linux"]);
+        assert!(
+            requests[1..3]
+                .iter()
+                .all(|request| request.starts_with("catalog ")),
+            "{requests:?}"
+        );
+        let catalog = declarations.catalog.unwrap();
+        assert_eq!(catalog.file.unwrap().as_str(), "catalog/catalog.nix");
+        let read: Vec<&str> = catalog.systems.keys().map(String::as_str).collect();
+        assert_eq!(read, ["aarch64-darwin", "x86_64-linux"]);
+        assert!(
+            catalog
+                .systems
+                .values()
+                .all(|read| matches!(read, Some(Evaluated::Value(_))))
+        );
+        assert_eq!(declarations.projects.len(), 40);
+    }
+
+    #[test]
+    fn a_system_nixpkgs_does_not_know_reads_as_no_package_set() {
+        let mut scripted = Scripted::new(&[("a", Behaves::Evaluates, &[])]);
+        scripted.catalog = Some(vec!["unknown-system"]);
+        let catalog = compose(&scripted, None, 2).unwrap().catalog.unwrap();
+        assert_eq!(catalog.systems["unknown-system"], None);
+    }
+
+    // no declaration reads a package set, so a catalog that fails costs no project its entry.
+    #[test]
+    fn a_catalog_that_fails_is_its_own_failure_and_every_project_still_evaluates() {
+        let mut scripted = Scripted::new(&[
+            ("a", Behaves::Evaluates, &[]),
+            ("b", Behaves::Evaluates, &[]),
+        ]);
+        scripted.catalog = Some(vec!["x86_64-linux"]);
+        scripted.catalog_fails = true;
+        let declarations = compose(&scripted, None, 2).unwrap();
+        let catalog = declarations.catalog.unwrap();
+        let Some(Some(Evaluated::Failed(failed))) = catalog.systems.get("x86_64-linux") else {
+            panic!("{catalog:?}");
+        };
+        assert_eq!(failed.failure.kind, FailureKind::Thrown);
+        assert_eq!(
+            user_frames(&failed.failure)[0].file.as_str(),
+            "catalog/catalog.nix"
+        );
+        assert!(
+            declarations
+                .projects
+                .values()
+                .all(|entry| matches!(entry, Some(Evaluated::Value(_))))
+        );
+    }
+
+    // a focused composition holds the project and the toolchains it names, so it takes each
+    // imported toolchain's owner with it the way it takes a dependency, and reads the catalog its
+    // packages come from.
+    #[test]
+    fn a_focused_composition_takes_the_owner_of_each_toolchain_it_imports() {
+        let mut scripted = Scripted::new(&[
+            ("app", Behaves::Evaluates, &[]),
+            ("jvm", Behaves::Evaluates, &["base"]),
+            ("base", Behaves::Evaluates, &[]),
+            ("other", Behaves::Evaluates, &[]),
+        ]);
+        scripted
+            .imports
+            .insert("app".to_owned(), vec!["jvm".to_owned()]);
+        scripted.catalog = Some(vec!["x86_64-linux"]);
+        let global = entries(&compose(&scripted, None, 2).unwrap());
+        let declarations = compose(&scripted, Some("app"), 2).unwrap();
+        let focused = entries(&declarations);
+        let names: Vec<&str> = focused.keys().map(String::as_str).collect();
+        assert_eq!(names, ["app", "base", "jvm"]);
+        for (name, entry) in &focused {
+            assert_eq!(entry, &global[name], "{name}");
+        }
+        assert!(declarations.catalog.is_some());
     }
 }

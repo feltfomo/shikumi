@@ -250,6 +250,51 @@ fn is_glob(value: &str) -> bool {
     is_text(value) && !value.starts_with('/') && !value.split('/').any(|part| part == "..")
 }
 
+const VARIABLE_PATTERN: &str = "^[A-Za-z_][A-Za-z0-9_]*$";
+
+/// what an environment variable's name may be, as the variable's refusal and schema say it.
+pub(crate) const VARIABLE_ACCEPTS: &str =
+    "an environment variable's name: a letter or underscore, then letters, digits and underscores";
+
+pub(crate) fn is_variable(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+// one attribute name, as a regex fragment, which both the name's pattern and the path's are built
+// from, so the two can't spell it differently.
+macro_rules! attribute_name {
+    () => {
+        "[A-Za-z_][A-Za-z0-9_'-]*"
+    };
+}
+
+const ATTRIBUTE_PATTERN: &str = concat!("^", attribute_name!(), "$");
+
+/// what a nixpkgs attribute's name may be, as an override's refusal and schema say it.
+pub(crate) const ATTRIBUTE_ACCEPTS: &str = "an attribute name Nix takes unquoted: a letter or underscore, then letters, digits, underscores, apostrophes and hyphens";
+
+pub(crate) fn is_attribute(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'\'' | b'-'))
+}
+
+const ATTRIBUTE_PATH_PATTERN: &str =
+    concat!("^", attribute_name!(), "(\\.", attribute_name!(), ")*$");
+
+/// what a nixpkgs attribute path may be, as a catalog entry's refusal and schema say it.
+pub(crate) const ATTRIBUTE_PATH_ACCEPTS: &str = "a nixpkgs attribute path: attribute names, each one Nix takes unquoted, joined by `.`, such as `jdk21` or `nodePackages.prettier`";
+
+pub(crate) fn is_attribute_path(value: &str) -> bool {
+    value.split('.').all(is_attribute)
+}
+
 /// the string kinds a declaration is checked as. each one's rule is written once, here: the
 /// predicate, what a value of another kind is told it must be, and the phrase that says what it
 /// accepts, which the checker's refusals, the contract's own errors and schemas, and the reference
@@ -365,6 +410,42 @@ checked_string!(
     }
 );
 
+checked_string!(
+    /// the name of an environment variable a project or toolchain defines.
+    Variable,
+    is_variable,
+    format!("is not {VARIABLE_ACCEPTS}"),
+    {
+        "type": "string",
+        "pattern": VARIABLE_PATTERN,
+        "description": VARIABLE_ACCEPTS
+    }
+);
+
+checked_string!(
+    /// the name of a nixpkgs attribute the catalog's overlay replaces or adds.
+    AttributeName,
+    is_attribute,
+    format!("is not {ATTRIBUTE_ACCEPTS}"),
+    {
+        "type": "string",
+        "pattern": ATTRIBUTE_PATTERN,
+        "description": ATTRIBUTE_ACCEPTS
+    }
+);
+
+checked_string!(
+    /// a package's attribute path in nixpkgs, which the catalog names a package by.
+    AttributePath,
+    is_attribute_path,
+    format!("is not {ATTRIBUTE_PATH_ACCEPTS}"),
+    {
+        "type": "string",
+        "pattern": ATTRIBUTE_PATH_PATTERN,
+        "description": ATTRIBUTE_PATH_ACCEPTS
+    }
+);
+
 /// a list with at least one element, so an empty one is refused where it's read rather than by a
 /// check someone has to remember.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -464,6 +545,17 @@ mod tests {
     #[test]
     fn every_schema_pattern_accepts_what_its_predicate_accepts() {
         let samples = [
+            "JAVA_HOME",
+            "_x",
+            "PATH",
+            "a'",
+            "x.y.z",
+            "x..y",
+            ".x",
+            "x.",
+            "nodePackages.prettier",
+            "a.1b",
+            "a'.b-c",
             "",
             " ",
             "a",
@@ -489,10 +581,17 @@ mod tests {
             "\tx",
         ];
         type Rule = (&'static str, fancy_regex::Regex, fn(&str) -> bool);
-        let rules: [Rule; 3] = [
+        let rules: [Rule; 6] = [
             ("identifier", pattern::<Identifier>(), is_identifier),
             ("text", pattern::<Text>(), is_text),
             ("relative path", pattern::<RelativePath>(), is_relative_path),
+            ("variable", pattern::<Variable>(), is_variable),
+            ("attribute name", pattern::<AttributeName>(), is_attribute),
+            (
+                "attribute path",
+                pattern::<AttributePath>(),
+                is_attribute_path,
+            ),
         ];
         for (name, regex, predicate) in rules {
             for sample in samples {

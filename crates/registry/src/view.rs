@@ -12,7 +12,7 @@ use clap::{Args, Subcommand, ValueEnum};
 
 use crate::contract::render_json;
 use crate::declarations;
-use crate::document::{self, Diagnostic, Identifier, Project, Registry, RegistryError};
+use crate::document::{self, Diagnostic, EnvValue, Identifier, Project, Registry, RegistryError};
 use crate::evaluation;
 use crate::produce::{ProduceError, Producer};
 use crate::reference;
@@ -219,6 +219,15 @@ fn detail(name: &Identifier, project: &Project) -> String {
     writeln!(text, "  maintainers  {maintainers}").unwrap();
     let dependencies = joined(&mut project.depends_on.iter().map(|d| d.as_str()));
     writeln!(text, "  depends on   {dependencies}").unwrap();
+    let imports: Vec<String> = project
+        .imports
+        .iter()
+        .map(|(toolchain, owner)| format!("{toolchain} from {owner}"))
+        .collect();
+    let imports = joined(&mut imports.iter().map(String::as_str));
+    writeln!(text, "  imports      {imports}").unwrap();
+    let packages = joined(&mut project.packages.iter().map(|p| p.as_str()));
+    writeln!(text, "  packages     {packages}").unwrap();
 
     let section = |text: &mut String, title: &str, rows: Vec<(String, String)>| {
         if rows.is_empty() {
@@ -230,6 +239,41 @@ fn detail(name: &Identifier, project: &Project) -> String {
             writeln!(text, "    {row:width$}  {description}").unwrap();
         }
     };
+    section(
+        &mut text,
+        "env",
+        project
+            .env
+            .iter()
+            .map(|(variable, value)| (variable.to_string(), shown(value)))
+            .collect(),
+    );
+    section(
+        &mut text,
+        "toolchains",
+        project
+            .toolchains
+            .iter()
+            .map(|(name, toolchain)| {
+                let mut uses: Vec<String> = Vec::new();
+                if !toolchain.packages.is_empty() {
+                    let packages: Vec<&str> =
+                        toolchain.packages.iter().map(|p| p.as_str()).collect();
+                    uses.push(format!("packages {}", packages.join(", ")));
+                }
+                if !toolchain.env.is_empty() {
+                    let variables: Vec<&str> = toolchain.env.keys().map(|v| v.as_str()).collect();
+                    uses.push(format!("env {}", variables.join(", ")));
+                }
+                let uses = if uses.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", uses.join("; "))
+                };
+                (name.to_string(), format!("{}{uses}", toolchain.description))
+            })
+            .collect(),
+    );
     section(
         &mut text,
         "steps",
@@ -280,6 +324,18 @@ fn detail(name: &Identifier, project: &Project) -> String {
             .collect(),
     );
     text
+}
+
+// a variable's value as a person reads it: text quoted, so an empty one shows, or the catalog
+// package it points into.
+fn shown(value: &EnvValue) -> String {
+    match value {
+        EnvValue::Text(text) => format!("{text:?}"),
+        EnvValue::Package(location) => match &location.path {
+            None => format!("package {}", location.package),
+            Some(path) => format!("package {}, at {path}", location.package),
+        },
+    }
 }
 
 #[derive(Debug)]

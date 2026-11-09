@@ -1,19 +1,19 @@
 error[invalid]: `extensions.broken` must be a schema built from `shikumi.lib.types`
-  --> shikumi.nix:31:5
+  --> shikumi.nix:37:5
    |
-31 |     broken = "not a schema";
+37 |     broken = "not a schema";
    |     ^^^^^^
 
 error[invalid]: `extensions.sneaky` must be a schema built from `shikumi.lib.types`
-  --> shikumi.nix:35:5
+  --> shikumi.nix:41:5
    |
-35 |     sneaky = {
+41 |     sneaky = {
    |     ^^^^^^
 
 error[unknown-option]: `owners` is not an option here
-  --> shikumi.nix:39:3
+  --> shikumi.nix:45:3
    |
-39 |   owners = { };
+45 |   owners = { };
    |   ^^^^^^
 
 error[invalid]: `projects.outside` must be a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part
@@ -33,6 +33,46 @@ note: `dangling` is listed here
    |
 14 |     dangling = "projects/dangling";
    |     ^^^^^^^^
+
+error[invalid]: `catalog.systems[1]` names `x86_64-nowhere`, which the pinned nixpkgs doesn't know as a system
+  --> shikumi.nix:48:5
+   |
+48 |     systems = [
+   |     ^^^^^^^
+   = help: name systems as nixpkgs does, such as `x86_64-linux` or `aarch64-darwin`
+
+error[second-overlay]: `overlays` is a second overlay: the repository's one overlay is the catalog's `overrides`
+  --> catalog/catalog.nix:24:3
+   |
+24 |   overlays = [ (_: _: { }) ];
+   |   ^^^^^^^^
+   = help: move each entry to the catalog's `overrides`, with a `reason` and a `release`
+note: the one overlay is here
+  --> catalog/catalog.nix:9:3
+   |
+ 9 |   overrides = {
+   |   ^^^^^^^^^
+
+error[missing]: `overrides.cowsay.release` is required but not defined
+  --> catalog/catalog.nix:19:5
+   |
+19 |     cowsay = {
+   |     ^^^^^^
+   = help: add `release = ...;`
+
+error[missing]: `overrides.hello.reason` is required but not defined
+  --> catalog/catalog.nix:15:5
+   |
+15 |     hello = {
+   |     ^^^^^
+   = help: add `reason = ...;`
+
+error[unknown-reference]: `packages.missing` names `no-such-package`, which is no package in the pinned nixpkgs on x86_64-linux
+ --> catalog/catalog.nix:7:5
+  |
+7 |     missing = "no-such-package";
+  |     ^^^^^^^
+  = help: name a package nixpkgs builds, or add one through the catalog's `overrides`
 
 error[no-declaration]: `projects.absent` lists `projects/absent`, which has no project.nix
   --> shikumi.nix:18:5
@@ -131,6 +171,24 @@ error[not-a-declaration]: returns an attribute set, not a `shikumi.project` resu
  --> projects/no-factory/project.nix
   = help: pass the record through the factory: `{ shikumi, ... }: shikumi.project { ... }`
 
+error[second-overlay]: `overrides` is a second overlay: the repository's one overlay is the catalog's `overrides`
+ --> projects/overlay/project.nix:7:3
+  |
+7 |   overrides.hello = {
+  |   ^^^^^^^^^
+  = help: move each entry to the catalog's `overrides`, with a `reason` and a `release`
+note: the one overlay is here
+ --> catalog/catalog.nix:9:3
+  |
+9 |   overrides = {
+  |   ^^^^^^^^^
+
+error[invalid]: `env.PATH` is the shell's path, which the packages its sources pick make
+ --> projects/path-variable/project.nix:8:3
+  |
+8 |   env.PATH = "/usr/bin";
+  |       ^^^^
+
 error[missing]: `commands.check.exec` is required but not defined
  --> projects/split/project.nix:8:5
   |
@@ -199,6 +257,42 @@ error[unknown-reference]: `steps.test.after[0]` names `build`, which isn't a ste
 14 |     after = [ "build" ];
    |     ^^^^^
 
+error[unknown-reference]: `project.imports.rust` imports `rust` from `jdk-owner`, which defines no toolchain `rust`
+ --> projects/jvm-app/project.nix:8:7
+  |
+8 |       rust = "jdk-owner";
+  |       ^^^^
+  = help: define it in `jdk-owner`'s `toolchains.rust`
+note: `jdk-owner`'s toolchains are here
+ --> projects/jdk-owner/project.nix:7:3
+  |
+7 |   toolchains.jdk = {
+  |   ^^^^^^^^^^
+
+error[unknown-reference]: `packages[1]` names `nowhere`, which isn't in the catalog
+ --> projects/picks/project.nix:7:3
+  |
+7 |   packages = [
+  |   ^^^^^^^^
+  = help: add `nowhere` to the catalog's `packages`
+note: the catalog's packages are here
+ --> catalog/catalog.nix:2:3
+  |
+2 |   packages = {
+  |   ^^^^^^^^
+
+error[unknown-reference]: `env.TOOL_HOME.package` names `elsewhere`, which isn't in the catalog
+  --> projects/picks/project.nix:11:3
+   |
+11 |   env.TOOL_HOME.package = "elsewhere";
+   |                 ^^^^^^^
+   = help: add `elsewhere` to the catalog's `packages`
+note: the catalog's packages are here
+  --> catalog/catalog.nix:2:3
+   |
+ 2 |   packages = {
+   |   ^^^^^^^^
+
 error[cycle]: `project.dependsOn[1]` makes a loop: `cycle-a` depends on `cycle-b`, which depends on `cycle-a`
  --> projects/cycle-a/project.nix:6:5
   |
@@ -246,4 +340,40 @@ note: `duplicate-a` declares it here
    |
 11 |   services.db = {
    |            ^^
+
+error[duplicate]: `toolchains.jdk` is already declared by `jdk-again`
+ --> projects/jdk-owner/project.nix:7:3
+  |
+7 |   toolchains.jdk = {
+  |              ^^^
+  = help: a toolchain has one owner; use `jdk-again`'s instead: `project.imports.jdk = "jdk-again";`
+note: `jdk-again` declares it here
+ --> projects/jdk-again/project.nix:7:3
+  |
+7 |   toolchains.jdk.description = "Another JDK";
+  |              ^^^
+
+error[duplicate]: `env.JAVA_HOME` is already defined by toolchain `jdk` of `jdk-owner`
+  --> projects/jvm-app/project.nix:12:3
+   |
+12 |   env.JAVA_HOME = "/opt/jdk";
+   |       ^^^^^^^^^
+   = help: define each variable once: a project and the toolchains it uses share one environment
+note: toolchain `jdk` of `jdk-owner` defines it here
+  --> projects/jdk-owner/project.nix:10:5
+   |
+10 |     env.JAVA_HOME = {
+   |         ^^^^^^^^^
+
+error[conflict]: `packages[0]` puts `openjdk-25.0.5.0.3+1` on the path, from catalog package `kotlin` through the propagated inputs of `kotlin-2.4.21`, where `openjdk-21.0.12.1+1` from catalog package `jdk` already is: two packages named `openjdk` on x86_64-linux
+  --> projects/jvm-app/project.nix:11:3
+   |
+11 |   packages = [ "kotlin" ];
+   |   ^^^^^^^^
+   = help: keep one of them on the path: pick packages that agree, or make them agree in the catalog's `overrides`
+note: toolchain `jdk` of `jdk-owner` puts `openjdk-21.0.12.1+1` on the path here
+  --> projects/jdk-owner/project.nix:9:5
+   |
+ 9 |     packages = [ "jdk" ];
+   |     ^^^^^^^^
 

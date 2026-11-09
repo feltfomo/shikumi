@@ -17,18 +17,18 @@
 # them on this implementation are kept in OUT, and may name neither the declaration layer nor a
 # store path. the fixture is also evaluated on one core, where its projects share batches, and each
 # project is evaluated alone, focused on it, side by side; the two have to agree on every project's
-# entry. a fault planted in a copy of the layer's serialization has to come back as a Shikumi bug
-# wherever it's reached, and the user's own failures as theirs.
+# entry. a fault planted in a copy of the layer, where it serializes each project, has to come back
+# as a Shikumi bug wherever it's reached, and the user's own failures as theirs.
 #
-# every directory under PLANTED is a repository whose declaration reaches for a build or a
-# program; its `refusal` file holds the word the producer's refusal has to name. the producer has
-# to refuse each one, and a control evaluation of the same declaration without the producer's
-# refusals, on a store this build owns, has to reach what it planted, so the refusal is what
-# stopped it and not something else in the sandbox. the control asks the layer for the `app`
-# project with REFERENCES' `planted-request.json`, which the registry crate's tests hold to the
-# producer's own request. the cases run side by side, each with its own
-# control store. `NIX_CONFIG` turns `builtins.exec` on for every run, as a caller's configuration
-# could.
+# every directory under PLANTED is a repository whose declaration, or catalog, reaches for a build
+# or a program; its `refusal` file holds the word the producer's refusal has to name, and its
+# `request` file, where it has one, the evaluation the control asks for in place of the `app`
+# project's declaration, which REFERENCES' `planted-request.json` asks for, held by the registry
+# crate's tests to the producer's own request. the producer has to refuse each one, and a control
+# evaluation of the same request without the producer's refusals, on a store this build owns, has
+# to reach what it planted, so the refusal is what stopped it and not something else in the
+# sandbox. the cases run side by side, each with its own control store. `NIX_CONFIG` turns
+# `builtins.exec` on for every run, as a caller's configuration could.
 #
 # `jq` reads the JSON and `taskset` limits a run to one core.
 set -euo pipefail
@@ -118,12 +118,14 @@ differing=$(jq -rn --slurpfile together "$out/failures.one-core.json" '
 }
 echo "failures: every project's entry on one core is what it is evaluated alone"
 
-# lists are serialized by one line of `serialize.nix`, and the planted fault breaks it.
+# every project's declaration is serialized by one line of `compose.nix`, and the planted fault
+# fails there once the declaration is forced whole, so it's reached by every project whose own code
+# evaluates, and by nothing else.
 cp -r "$layer" "$TMPDIR/planted-layer"
 chmod -R u+w "$TMPDIR/planted-layer"
-sed -i 's/      items = map node value;/      items = map node value ++ null;/' "$TMPDIR/planted-layer/serialize.nix"
-grep -q 'map node value ++ null' "$TMPDIR/planted-layer/serialize.nix" || {
-  echo "the fault wasn't planted: serialize.nix no longer has the line it replaces" >&2
+sed -i 's/      value = serialized.value (if factory then declaration.declaration else declaration);/      value = builtins.deepSeq (serialized.value (if factory then declaration.declaration else declaration)) (null ++ null);/' "$TMPDIR/planted-layer/compose.nix"
+grep -q 'else declaration)) (null ++ null);' "$TMPDIR/planted-layer/compose.nix" || {
+  echo "the fault wasn't planted: compose.nix no longer has the line it replaces" >&2
   exit 1
 }
 # the package sets the layer it ships, so a copy of its wrapper points at the planted one instead.
@@ -139,9 +141,9 @@ if "$TMPDIR/shikumi-planted" registry check --format json --root "$failures" \
   exit 1
 fi
 # the projects whose declarations evaluate reach the broken line; the ones that fail first, in the
-# user's code, don't.
+# user's code, don't, and the catalog, which no project's line serializes, keeps its own failure.
 codes=$(jq -c '[.diagnostics[] | [.project, .code]]' "$out/planted-bug.json")
-expected='[["assertion","assertion"],["call-type","type-error"],["coerce","type-error"],["consumer","shikumi-bug"],["library","thrown"],["missing-summary","shikumi-bug"],["sound","shikumi-bug"],["syntax","syntax"],["thrown","thrown"],["undefined","undefined-variable"],["uneven","thrown"],["utf8","shikumi-bug"]]'
+expected='[[null,"thrown"],["assertion","assertion"],["call-type","type-error"],["coerce","type-error"],["consumer","shikumi-bug"],["library","thrown"],["missing-summary","shikumi-bug"],["sound","shikumi-bug"],["syntax","syntax"],["thrown","thrown"],["undefined","undefined-variable"],["uneven","thrown"],["utf8","shikumi-bug"]]'
 [ "$codes" = "$expected" ] || {
   echo "the planted fault came back as $codes, not $expected" >&2
   exit 1
@@ -150,9 +152,13 @@ echo "planted fault: a Shikumi bug wherever it's reached, the user's own failure
 
 # one planted case: refused by the producer, reached by the control.
 plant() {
-  local repository=$1 case named control
+  local repository=$1 case named control request
   case=$(basename "$repository")
   named=$(cat "$repository/refusal")
+  request=$(cat "$references/planted-request.json")
+  if [ -f "$repository/request" ]; then
+    request=$(cat "$repository/request")
+  fi
   if shikumi registry document --root "$repository" > /dev/null 2> "$out/$case.stderr"; then
     echo "the planted $case was not refused"
     return 1
@@ -168,7 +174,7 @@ plant() {
     --store "local?store=$control/store&state=$control/state&log=$control/log" \
     --option sandbox false --option build-users-group "" --option substituters "" \
     "$layer/produce.nix" --argstr nixpkgs "$nixpkgs" --argstr root "$repository" \
-    --argstr request "$(cat "$references/planted-request.json")" \
+    --argstr request "$request" \
     > "$out/$case.control.json" 2> "$out/$case.control.stderr" || {
     echo "the control evaluation of $case didn't reach what it planted:"
     cat "$out/$case.control.stderr"

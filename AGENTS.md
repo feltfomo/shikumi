@@ -59,25 +59,27 @@ output for the current system:
   Inside each VM an untrusted user runs `shikumi-conformance` three times, through the CLI, the daemon
   socket and `ssh-ng`, comparing every store path Shikumi computes, and what early cutoff and roots do
   with them, with what that VM's daemon registers and reports. Each run ends by collecting garbage in
-  the VM's store. These checks exist only on Linux, and they
-  need KVM: without `/dev/kvm` and the `kvm` system feature the builder refuses them. Each boots a VM
-  and builds its Nix if the cache lacks it; Determinate Nix is built from source.
+  the VM's store. These checks exist only on Linux, and they need KVM: without `/dev/kvm` and the
+  `kvm` system feature the builder refuses them. Each boots a VM and builds its Nix if the cache lacks
+  it; Determinate Nix is built from source.
 - `declarations`: the declaration layer's nix-unit tests, in `nix/declarations/tests/`: the factory,
   serialization and its source positions, the vocabulary, `compose` on the fixture repositories
-  beside them, the layer's copy of the names it shares with the registry crate, and the module
+  beside them, the catalog's reading of the pinned nixpkgs, its overlay and its packages'
+  propagation, the layer's copy of the names it shares with the registry crate, and the module
   adapter in NixOS, in Home Manager from nixpkgs' pin of its source, and against a copy of
   flake-parts' option declarations.
 - `registry-no-builds-cppnix-2-35`, `registry-no-builds-determinate-3-24`, `registry-no-builds-lix-2-95`
   and `registry-no-builds-lix-2-96`: under that implementation, the packaged `shikumi` serializes the
-  basic and broken fixtures' declarations exactly as `crates/registry/fixtures/` holds them, and refuses
-  each planted declaration under `nix/declarations/tests/planted/`, which reaches for a build's output
-  or a program; a control evaluation without the producer's refusals has to reach it. The failures
-  fixture's evaluation failures classify as the tracked reference has them, every project evaluated
-  beside the others on one core matches it focused on alone, and a fault planted in a copy of the layer
-  comes back as a Shikumi bug. The findings as that implementation renders them are kept in the result,
-  and fail the check if they name Shikumi's own files or a store path. The document and the rendered
-  findings those declarations give are held by the registry crate's tests. Defined, with the next two,
-  in `nix/declarations-checks.nix`, and run by `nix/declarations-no-builds.sh`.
+  basic and broken fixtures' declarations, catalogs included, exactly as `crates/registry/fixtures/`
+  holds them, and refuses each planted declaration or catalog under `nix/declarations/tests/planted/`,
+  which reaches for a build's output or a program; a control evaluation without the producer's
+  refusals has to reach it. The failures fixture's evaluation failures classify as the tracked
+  reference has them, every project evaluated beside the others on one core matches it focused on
+  alone, and a fault planted in a copy of the layer comes back as a Shikumi bug. The findings as that
+  implementation renders them are kept in the result, and fail the check if they name Shikumi's own
+  files or a store path. The document and the rendered findings those declarations give are held by
+  the registry crate's tests. Defined, with the next two, in `nix/declarations-checks.nix`, and run
+  by `nix/declarations-no-builds.sh`.
 - `registry-cli`: the packaged `shikumi`, on one implementation, accepts the basic fixture with its
   tracked document and refuses the broken and failures fixtures with their tracked findings, each on the
   stream and with the exit code each view uses, and a manifest that doesn't parse with one finding.

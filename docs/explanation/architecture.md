@@ -10,7 +10,8 @@ repository's foundation (the gate, its checks in `tools/repo-check/`, and
 of [derivation synthesis](#derivation-synthesis), both implementations of
 [the store transport](#store-transport), and the re-addressing and rooting that
 [early cutoff](#early-cutoff) and [roots](#caches-and-roots) rest on); and
-[the declaration layer](#the-declaration-layer)'s composition, checker and registry document.
+[the declaration layer](#the-declaration-layer)'s composition, catalog, checker and registry
+document.
 
 ## Shape
 
@@ -42,15 +43,20 @@ daemon, runs the host's evaluator, and drives unmodified compilers.
 The declaration layer turns a repository's project declarations into the registry document, which
 the core reads, and into the toolchain context and shell environments. Its Nix half, `shikumi.lib` in
 `nix/declarations/`, reads and serializes; its Rust half, the checker in `crates/registry/`, judges.
-Composition, serialization, the checker, the module adapter and the registry document are current.
-The toolchain context and shell environments are targets.
+Composition, the catalog's reading of the pinned nixpkgs, serialization, the checker, the module
+adapter and the registry document are current. The toolchain context and shell environments are
+targets.
 
 ```mermaid
 graph LR
   manifest["shikumi.nix<br/>manifest"] --> compose["compose.nix<br/>plan and read"]
   decl["project.nix<br/>shikumi.project { … }"] --> compose
+  catalogfile["catalog/catalog.nix<br/>packages, overrides"] --> catalog["catalog.nix<br/>one package set per system"]
+  nixpkgs["pinned nixpkgs"] --> catalog
   compose --> serialize["serialize.nix<br/>values and positions"]
+  catalog --> serialize
   produce["shikumi-registry<br/>producer"] -->|"one plan, then batches,<br/>nix-instantiate, dummy://"| compose
+  produce -->|"one evaluation<br/>per system"| catalog
   serialize -->|"shikumi.evaluation<br/>or an error"| produce
   produce -->|"shikumi.declarations,<br/>failures included"| checker["checker<br/>(Rust)"]
   checker --> doc["registry document"]
@@ -61,23 +67,30 @@ graph LR
 - **Owners.** `factory.nix` owns `shikumi.project`, which marks a plain record as a declaration and
   changes nothing else. `vocabulary.nix` owns `shikumi.lib.types`, whose constructors only build
   data. `serialize.nix` owns turning any value into a tagged tree with source positions.
-  `compose.nix` owns the manifest and which declaration files a composition reads. `forced.nix` owns
-  the frame around every first forcing of a user's value. `produce.nix` owns the requests the
+  `compose.nix` owns the manifest and which declaration and catalog files a composition reads.
+  `catalog.nix` owns the one package set: importing the pinned nixpkgs for a system with the
+  catalog's overlay, and what evaluation can see of each package the catalog names. `call.nix` owns
+  calling a file with the arguments it names. `forced.nix` owns the frame around every first forcing
+  of a user's value. `produce.nix` owns the requests the
   producer can make and the frame that names a project in the evaluator's trace. `modules.nix` owns
   the module adapter. In the `shikumi-registry` crate, `check.rs` owns every judgement about a
-  declaration, `vocabulary.rs` owns what each type accepts and the one definition of each shape:
-  the declaration record, the manifest's fields and the field names they share. `document.rs` owns
-  the document's types, which are those records' serde shape with their descriptions, its schema
-  and the refusal. `layer.rs` owns what both halves name: each file the layer reads, the arguments
-  it's offered and the frames in a trace, written to `layer.json`, which the layer's Nix reads. `render.rs` owns the text form of
+  declaration and the catalog, `vocabulary.rs` owns what each type accepts and the one definition of
+  each shape: the declaration record, the manifest's fields, the catalog's record and the field
+  names they share. `document.rs` owns the document's types, which are those records' serde shape
+  with their descriptions, its schema and the refusal, and the one definition of a shell's sources
+  and of who claims a name, which the checker reads too. `layer.rs` owns what both halves name: each
+  file the layer reads, the arguments it's offered, the fields read by name and the frames in a
+  trace, written to `layer.json`, which the layer's Nix reads. `render.rs` owns the text form of
   findings, `failure.rs` owns reading an evaluator's error, the one place an evaluator's text is
   parsed, `evaluation.rs` owns the contract of each evaluation's answer, `produce.rs` owns the
   producer, which projects a composition holds and how they're evaluated, and `view.rs` owns the
   viewer. The `shikumi` crate in `crates/cli/` only parses arguments and lists subcommands.
-- **Entry point.** `shikumi.lib.compose { root; manifest; }` is pure: it gives the serialized
-  manifest, each listed project's declaration file, and `read`, which serializes one project from
-  its file without reading the manifest again, so a caller can evaluate each project apart. nix-unit
-  tests call it directly, with no CLI.
+- **Entry point.** `shikumi.lib` takes the nixpkgs source tree from whoever imports it.
+  `shikumi.lib.compose { root; manifest; }` is pure: it gives the serialized manifest, each listed
+  project's declaration file, the catalog's file and systems, and `read`, which serializes one
+  project from its file without reading the manifest again, so a caller can evaluate each project
+  apart. `shikumi.lib.catalog root { file; system; }` reads the catalog for one system. nix-unit
+  tests call both directly, with no CLI.
 - **Plain records, no module system.** `shikumi.project` takes a plain attribute set, a flat set of
   small records, and returns it marked as a declaration and otherwise unchanged, so the source
   position of every attribute survives to serialization. There's no fixpoint, no merge order and no
@@ -139,16 +152,51 @@ graph LR
   such as an evaluator that's killed, halves its batch until it's down to one project. Evaluation is
   pure and a failed evaluator leaves nothing behind, so every project comes out as it would
   evaluated alone. A focused composition is evaluated the same way, in rounds: the focused project,
-  then the listed projects its serialized `dependsOn` names, and so on, so a failed dependency is
-  that project's finding and the focused project is still checked, each as the global composition
-  gives it. The evaluator processes belong to the run: each is started and reaped by one of the
-  run's scoped threads, no batch starts after an error, and Ctrl-C reaches them through the
-  terminal's process group. A `shikumi` killed any other way leaves its running evaluators to finish
-  their batch, at most 64 declarations, and exit, or, for a declaration that never terminates, to
-  run until they're killed too.
+  then the listed projects its serialized `dependsOn` and toolchain imports name, and so on, so a
+  failed dependency is that project's finding and the focused project is still checked, each as the
+  global composition gives it. The catalog's evaluations reach no declaration, so a failure in one
+  is the catalog's wherever its frames lie. The evaluator processes belong to the run: each is
+  started and reaped by one of the run's scoped threads, no evaluation starts after an error, and
+  Ctrl-C reaches them through the terminal's process group. A `shikumi` killed any other way leaves
+  its running evaluators to finish their batch, at most 64 declarations, or their package set, and
+  exit, or, for a declaration that never terminates, to run until they're killed too.
+- **The catalog.** The repository's catalog is the one place its packages come from, and neither it
+  nor any declaration touches a package set: the catalog names each package by its attribute path in
+  the pinned nixpkgs, and a project picks packages by catalog name. So a package that differs from
+  nixpkgs' comes only from the catalog's overlay, where each entry carries its reason and release,
+  and a batch of declarations evaluates no nixpkgs and costs what it does without a catalog. The catalog's directory and systems are the
+  manifest's to say, so the system never comes from the host, and the plan names the catalog's file.
+  The producer then evaluates the catalog once for each system, as evaluations of their own at the
+  front of the first round's queue, beside the projects' batches. Each imports the pinned nixpkgs for
+  that system with the catalog's `overrides` as its one overlay and an explicit empty `config`, so
+  no configuration or overlay of the host's is read, and the evaluator's empty environment keeps
+  nixpkgs' `NIXPKGS_ALLOW_*` variables out too. It resolves each entry's path there, and a path that
+  names nothing, or a package that throws as it's read, resolves to no package rather than failing
+  the catalog. It answers three things: the catalog's value, serialized like a declaration; which
+  package each catalog name resolves to, by the package's `name`; and,
+  for every package reachable from them through the propagation attributes, its `pname`, version,
+  `meta.mainProgram` and what it propagates. No `outPath` or `drvPath` is forced, so nothing is
+  instantiated or built and the answer carries no store path. A catalog that fails to evaluate is
+  one finding at the catalog's file, and the checker checks nothing against it.
+- **Toolchains and shells.** A toolchain is defined under one project's `toolchains`, and another
+  project imports it under `project.imports`, naming the project that defines it. The import names
+  its owner so a focused composition can take that project with it from the declaration it has
+  already read, the way it takes a dependency, without reading the others to find who defines it.
+  The checker forms each shell's sources, a project or one of its toolchains, in one order: every
+  toolchain, by its project's name and then its own, then every project by name. That's every
+  source for the global composition, and the focused project, its toolchains and the ones it imports
+  for a focused one. The order is the same either way, so a rule that keeps the first of two
+  definitions keeps the same one and a focused composition reports a clash where the global one
+  does; and since a toolchain is shared by every project that uses it, a clash between the two lands
+  on the project. On that list the checker holds each variable to one definition, with no
+  precedence between a project's and a toolchain's and `PATH` reserved to the shell, and walks each
+  system's propagation graph breadth first from every pick, keeping the first package under each
+  name, a `pname` or a `mainProgram` alike, and refusing a different one.
 - **Toolchain context.** The store paths and settings a backend needs to write `.drv` files: compiler,
   linker and builder paths, base environment, system and flags. It's small and changes only when the
-  lock or a declaration changes. Accepted target.
+  lock or a declaration changes. It reads the packages it needs from the catalog by name, through
+  `catalog.nix`, and resolves them to store paths there, which is the one step that forces a
+  package's `outPath`. Accepted target.
 - **No builds during evaluation.** Nothing in the layer forces a derivation output, and a declaration
   that reads one through the evaluator is refused. A read by a plain path with no store context isn't
   refused; that's the known gap under [Invariants](#invariants).
@@ -159,8 +207,13 @@ graph LR
   than an endless walk. The checker visits each serialized value once. Across projects it sorts the
   manifest's directories once for overlaps, walks the dependency graph and each project's step graph
   once for loops, and keeps one map per name space for duplicates. Each project is checked on its
-  own on Rayon's pool, and the findings keep name order. A focused composition reads only its
-  project's dependency closure. Isolation keeps the evaluation linear, since a batch reads its
+  own on Rayon's pool, and the findings keep name order. The rules on a shell are linear too: one
+  lookup per package picked against the catalog's names, one map entry per variable, one map entry
+  per toolchain, and, per system, one visit to each package reachable from the picks, since a
+  package reached again is the same package. Reading the catalog is one evaluation of the pinned
+  nixpkgs per system per run, whatever the number of projects or batches, and grows with the
+  packages the catalog names and what they propagate. A focused composition reads only its
+  project's closure through dependencies and imports. Isolation keeps the evaluation linear, since a batch reads its
   declaration files without the manifest and holds at most 64 projects. A failure a frame places in
   its project costs at most one batch and two evaluator starts of about twenty milliseconds: a
   project that evaluated is evaluated at most twice, once in the batch that failed after it and once
@@ -537,7 +590,7 @@ accepted targets like the rest of the page, except those marked current.
 | A worktree never has two supervisors or a lost service | [service supervisor](#service-supervisor) | the four lifetime tests |
 | Every Nix implementation serializes the same declarations and yields the same findings, for declarations that don't inspect the evaluator | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, which hold each implementation's serialized declarations for every fixture, and its classified evaluation failures, to one tracked reference, and the registry crate's tests, which hold the document and the rendered findings those declarations give; current |
 | A project's declaration comes out the same evaluated beside others as evaluated alone | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, which compare every project of a failing fixture on one core with the same project focused on, and the producer's tests over every mix of failures; current |
-| No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, one per implementation, which plant output reads and a `builtins.exec` the producer has to refuse on every implementation; current, with the known gap below |
+| No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, one per implementation, which plant output reads in a declaration and in the catalog, and a `builtins.exec`, that the producer has to refuse on every implementation; current, with the known gap below |
 | The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | the checker refusing a store reference or the repository's location, and the `registry-worktrees` gate check, which compares two worktrees and plants a leak it has to catch; current, with the known gap below |
 
 **Known gap in the last two rows.** A declaration can read a file by a plain path that carries no

@@ -10,7 +10,7 @@
     "value": {
       "kind": "attrs",
       "fields": {
-        "extensions": {
+        "catalog": {
           "at": {
             "file": "shikumi.nix",
             "line": 8,
@@ -19,10 +19,56 @@
           "value": {
             "kind": "attrs",
             "fields": {
+              "directory": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 9,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "catalog",
+                  "context": false
+                }
+              },
+              "systems": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 10,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "list",
+                  "items": [
+                    {
+                      "kind": "string",
+                      "value": "x86_64-linux",
+                      "context": false
+                    },
+                    {
+                      "kind": "string",
+                      "value": "aarch64-darwin",
+                      "context": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "extensions": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 15,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
               "layout": {
                 "at": {
                   "file": "shikumi.nix",
-                  "line": 8,
+                  "line": 15,
                   "column": 3
                 },
                 "value": {
@@ -44,7 +90,7 @@
                           "pages": {
                             "at": {
                               "file": "shikumi.nix",
-                              "line": 8,
+                              "line": 15,
                               "column": 38
                             },
                             "value": {
@@ -108,7 +154,7 @@
               "team": {
                 "at": {
                   "file": "shikumi.nix",
-                  "line": 9,
+                  "line": 16,
                   "column": 3
                 },
                 "value": {
@@ -130,7 +176,7 @@
                           "owner": {
                             "at": {
                               "file": "shikumi.nix",
-                              "line": 10,
+                              "line": 17,
                               "column": 5
                             },
                             "value": {
@@ -165,7 +211,7 @@
                           "tier": {
                             "at": {
                               "file": "shikumi.nix",
-                              "line": 11,
+                              "line": 18,
                               "column": 5
                             },
                             "value": {
@@ -275,6 +321,337 @@
       }
     }
   },
+  "catalog": {
+    "file": "catalog/catalog.nix",
+    "systems": {
+      "aarch64-darwin": {
+        "value": {
+          "kind": "attrs",
+          "fields": {
+            "overrides": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 11,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 11,
+                      "column": 3
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 14,
+                            "column": 5
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "reason": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 12,
+                            "column": 5
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "Kotlin runs on the JDK every JVM project builds with, not the one nixpkgs picks for it",
+                            "context": false
+                          }
+                        },
+                        "release": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 13,
+                            "column": 5
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "nixpkgs' own choice of JDK for Kotlin is the repository's",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "packages": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 4,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "jdk": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 5,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "jdk21",
+                      "context": false
+                    }
+                  },
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 7,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "kotlin",
+                      "context": false
+                    }
+                  },
+                  "mdbook": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 9,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "mdbook",
+                      "context": false
+                    }
+                  },
+                  "nodejs": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 8,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "nodejs",
+                      "context": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "packages": {
+          "jdk": "zulu-ca-jdk-21.0.11",
+          "kotlin": "kotlin-2.4.21",
+          "mdbook": "mdbook-0.5.4",
+          "nodejs": "nodejs-24.21.0"
+        },
+        "graph": {
+          "kotlin-2.4.21": {
+            "pname": "kotlin",
+            "version": "2.4.21",
+            "mainProgram": null,
+            "propagates": [
+              "zulu-ca-jdk-21.0.11"
+            ]
+          },
+          "mdbook-0.5.4": {
+            "pname": "mdbook",
+            "version": "0.5.4",
+            "mainProgram": "mdbook",
+            "propagates": []
+          },
+          "nodejs-24.21.0": {
+            "pname": "nodejs",
+            "version": "24.21.0",
+            "mainProgram": "node",
+            "propagates": []
+          },
+          "zulu-ca-jdk-21.0.11": {
+            "pname": "zulu-ca-jdk",
+            "version": "21.0.11",
+            "mainProgram": "java",
+            "propagates": []
+          }
+        }
+      },
+      "x86_64-linux": {
+        "value": {
+          "kind": "attrs",
+          "fields": {
+            "overrides": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 11,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 11,
+                      "column": 3
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 14,
+                            "column": 5
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "reason": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 12,
+                            "column": 5
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "Kotlin runs on the JDK every JVM project builds with, not the one nixpkgs picks for it",
+                            "context": false
+                          }
+                        },
+                        "release": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 13,
+                            "column": 5
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "nixpkgs' own choice of JDK for Kotlin is the repository's",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "packages": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 4,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "jdk": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 5,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "jdk21",
+                      "context": false
+                    }
+                  },
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 7,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "kotlin",
+                      "context": false
+                    }
+                  },
+                  "mdbook": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 9,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "mdbook",
+                      "context": false
+                    }
+                  },
+                  "nodejs": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 8,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "nodejs",
+                      "context": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "packages": {
+          "jdk": "openjdk-21.0.12.1+1",
+          "kotlin": "kotlin-2.4.21",
+          "mdbook": "mdbook-0.5.4",
+          "nodejs": "nodejs-24.21.0"
+        },
+        "graph": {
+          "kotlin-2.4.21": {
+            "pname": "kotlin",
+            "version": "2.4.21",
+            "mainProgram": null,
+            "propagates": [
+              "openjdk-21.0.12.1+1"
+            ]
+          },
+          "mdbook-0.5.4": {
+            "pname": "mdbook",
+            "version": "0.5.4",
+            "mainProgram": "mdbook",
+            "propagates": []
+          },
+          "nodejs-24.21.0": {
+            "pname": "nodejs",
+            "version": "24.21.0",
+            "mainProgram": "node",
+            "propagates": []
+          },
+          "openjdk-21.0.12.1+1": {
+            "pname": "openjdk",
+            "version": "21.0.12.1+1",
+            "mainProgram": "java",
+            "propagates": [
+              "set-java-classpath-hook"
+            ]
+          },
+          "set-java-classpath-hook": {
+            "pname": "set-java-classpath-hook",
+            "version": "26.05pre-git",
+            "mainProgram": null,
+            "propagates": []
+          }
+        }
+      }
+    }
+  },
   "projects": {
     "core": {
       "factory": true,
@@ -284,7 +661,7 @@
           "extensions": {
             "at": {
               "file": "libs/core/project.nix",
-              "line": 9,
+              "line": 16,
               "column": 5
             },
             "value": {
@@ -293,7 +670,7 @@
                 "team": {
                   "at": {
                     "file": "libs/core/project.nix",
-                    "line": 9,
+                    "line": 16,
                     "column": 5
                   },
                   "value": {
@@ -302,7 +679,7 @@
                       "owner": {
                         "at": {
                           "file": "libs/core/project.nix",
-                          "line": 10,
+                          "line": 17,
                           "column": 7
                         },
                         "value": {
@@ -314,7 +691,7 @@
                       "tier": {
                         "at": {
                           "file": "libs/core/project.nix",
-                          "line": 11,
+                          "line": 18,
                           "column": 7
                         },
                         "value": {
@@ -470,6 +847,95 @@
                 }
               }
             }
+          },
+          "toolchains": {
+            "at": {
+              "file": "libs/core/project.nix",
+              "line": 9,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "jdk": {
+                  "at": {
+                    "file": "libs/core/project.nix",
+                    "line": 9,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "libs/core/project.nix",
+                          "line": 10,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "The JDK every JVM project builds and runs with",
+                          "context": false
+                        }
+                      },
+                      "env": {
+                        "at": {
+                          "file": "libs/core/project.nix",
+                          "line": 12,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "attrs",
+                          "fields": {
+                            "JAVA_HOME": {
+                              "at": {
+                                "file": "libs/core/project.nix",
+                                "line": 12,
+                                "column": 7
+                              },
+                              "value": {
+                                "kind": "attrs",
+                                "fields": {
+                                  "package": {
+                                    "at": {
+                                      "file": "libs/core/project.nix",
+                                      "line": 13,
+                                      "column": 9
+                                    },
+                                    "value": {
+                                      "kind": "string",
+                                      "value": "jdk",
+                                      "context": false
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "packages": {
+                        "at": {
+                          "file": "libs/core/project.nix",
+                          "line": 11,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "jdk",
+                              "context": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -482,7 +948,7 @@
           "commands": {
             "at": {
               "file": "docs/project.nix",
-              "line": 10,
+              "line": 12,
               "column": 3
             },
             "value": {
@@ -491,7 +957,7 @@
                 "preview": {
                   "at": {
                     "file": "docs/project.nix",
-                    "line": 10,
+                    "line": 12,
                     "column": 3
                   },
                   "value": {
@@ -500,7 +966,7 @@
                       "description": {
                         "at": {
                           "file": "docs/project.nix",
-                          "line": 11,
+                          "line": 13,
                           "column": 5
                         },
                         "value": {
@@ -512,7 +978,7 @@
                       "exec": {
                         "at": {
                           "file": "docs/project.nix",
-                          "line": 12,
+                          "line": 14,
                           "column": 5
                         },
                         "value": {
@@ -527,10 +993,34 @@
               }
             }
           },
+          "env": {
+            "at": {
+              "file": "docs/project.nix",
+              "line": 10,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "DOCS_PORT": {
+                  "at": {
+                    "file": "docs/project.nix",
+                    "line": 10,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "3000",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
           "extensions": {
             "at": {
               "file": "docs/project.nix",
-              "line": 9,
+              "line": 11,
               "column": 3
             },
             "value": {
@@ -539,7 +1029,7 @@
                 "layout": {
                   "at": {
                     "file": "docs/project.nix",
-                    "line": 9,
+                    "line": 11,
                     "column": 3
                   },
                   "value": {
@@ -548,7 +1038,7 @@
                       "pages": {
                         "at": {
                           "file": "docs/project.nix",
-                          "line": 9,
+                          "line": 11,
                           "column": 3
                         },
                         "value": {
@@ -566,6 +1056,23 @@
                   }
                 }
               }
+            }
+          },
+          "packages": {
+            "at": {
+              "file": "docs/project.nix",
+              "line": 9,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "mdbook",
+                  "context": false
+                }
+              ]
             }
           },
           "project": {
@@ -637,7 +1144,7 @@
           "commands": {
             "at": {
               "file": "apps/web/project.nix",
-              "line": 20,
+              "line": 26,
               "column": 5
             },
             "value": {
@@ -646,7 +1153,7 @@
                 "serve": {
                   "at": {
                     "file": "apps/web/project.nix",
-                    "line": 21,
+                    "line": 27,
                     "column": 7
                   },
                   "value": {
@@ -655,7 +1162,7 @@
                       "description": {
                         "at": {
                           "file": "apps/web/project.nix",
-                          "line": 22,
+                          "line": 28,
                           "column": 9
                         },
                         "value": {
@@ -667,7 +1174,7 @@
                       "exec": {
                         "at": {
                           "file": "apps/web/project.nix",
-                          "line": 23,
+                          "line": 29,
                           "column": 9
                         },
                         "value": {
@@ -682,10 +1189,34 @@
               }
             }
           },
+          "env": {
+            "at": {
+              "file": "apps/web/project.nix",
+              "line": 20,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "NODE_ENV": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 20,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "development",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
           "extensions": {
             "at": {
               "file": "apps/web/project.nix",
-              "line": 26,
+              "line": 32,
               "column": 5
             },
             "value": {
@@ -694,7 +1225,7 @@
                 "team": {
                   "at": {
                     "file": "apps/web/project.nix",
-                    "line": 26,
+                    "line": 32,
                     "column": 5
                   },
                   "value": {
@@ -703,7 +1234,7 @@
                       "owner": {
                         "at": {
                           "file": "apps/web/project.nix",
-                          "line": 26,
+                          "line": 32,
                           "column": 5
                         },
                         "value": {
@@ -716,6 +1247,28 @@
                   }
                 }
               }
+            }
+          },
+          "packages": {
+            "at": {
+              "file": "apps/web/project.nix",
+              "line": 16,
+              "column": 5
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "kotlin",
+                  "context": false
+                },
+                {
+                  "kind": "string",
+                  "value": "nodejs",
+                  "context": false
+                }
+              ]
             }
           },
           "project": {
@@ -742,6 +1295,30 @@
                         "context": false
                       }
                     ]
+                  }
+                },
+                "imports": {
+                  "at": {
+                    "file": "apps/web/project.nix",
+                    "line": 14,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "jdk": {
+                        "at": {
+                          "file": "apps/web/project.nix",
+                          "line": 14,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "core",
+                          "context": false
+                        }
+                      }
+                    }
                   }
                 },
                 "maintainers": {
@@ -844,7 +1421,7 @@
           "steps": {
             "at": {
               "file": "apps/web/project.nix",
-              "line": 15,
+              "line": 21,
               "column": 5
             },
             "value": {
@@ -853,7 +1430,7 @@
                 "bundle": {
                   "at": {
                     "file": "apps/web/project.nix",
-                    "line": 15,
+                    "line": 21,
                     "column": 5
                   },
                   "value": {
@@ -862,7 +1439,7 @@
                       "description": {
                         "at": {
                           "file": "apps/web/project.nix",
-                          "line": 16,
+                          "line": 22,
                           "column": 7
                         },
                         "value": {
@@ -874,7 +1451,7 @@
                       "exec": {
                         "at": {
                           "file": "apps/web/project.nix",
-                          "line": 17,
+                          "line": 23,
                           "column": 7
                         },
                         "value": {

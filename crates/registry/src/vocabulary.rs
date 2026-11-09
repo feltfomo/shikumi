@@ -4,15 +4,16 @@
 //! declaration record is a [`Type`] too, built in [`declaration`], so one vocabulary describes
 //! both, and the reference page is rendered from it.
 //!
-//! the manifest is described here too, by [`ManifestField`], so the checker, the names a misspelt
-//! field is matched against and the reference page all read the one definition of each. the names
-//! of the declaration record's fields are in [`names`], which the record and the checker both
-//! use.
+//! the manifest is described here too, by [`ManifestField`], and so is the catalog, in
+//! [`catalog`], so the checker, the names a misspelt field is matched against and the reference
+//! page all read the one definition of each. the names of the fields are in [`names`], which the
+//! records and the checker both use.
 //!
-//! a repository can only name the public kinds. [`Type::Command`] and [`Type::Schema`] have no
-//! constructor in `shikumi.lib.types` and aren't read from a schema here: a command line skips the
-//! checks that keep a string out of the document, right for a command line Shikumi never copies
-//! and wrong for an extension value it always does, and a schema is the manifest's to declare.
+//! a repository can only name the public kinds. [`Type::Command`], [`Type::Function`],
+//! [`Type::AttributePath`], [`Type::EnvValue`], [`Type::Schema`] and [`Type::SecondOverlay`] have
+//! no constructor in `shikumi.lib.types` and aren't read from a schema here: a command line and a
+//! function never reach the document, and the others are Shikumi's own. an attribute set a
+//! repository declares is keyed by identifiers.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -20,6 +21,7 @@ use serde_json::Value;
 
 use crate::contract::RelativePath;
 pub use crate::contract::Scalar;
+use crate::contract::{ATTRIBUTE_ACCEPTS, VARIABLE_ACCEPTS, is_attribute, is_variable};
 use crate::declarations::Node;
 use crate::document::Restart;
 
@@ -32,12 +34,81 @@ pub enum Type {
         element: Box<Type>,
         non_empty: bool,
     },
-    Attrs(Box<Type>),
+    Attrs {
+        key: Key,
+        element: Box<Type>,
+    },
     Record(Record),
-    /// a command line: non-blank text that never reaches the document.
+    /// a command line: non-blank text that never reaches the document, and names no store path,
+    /// since a command runs what its shell's packages put on the path.
     Command,
+    /// a function, such as what an overlay entry builds with; it never reaches the document.
+    Function,
+    /// a package's attribute path in the pinned nixpkgs, which the catalog resolves.
+    AttributePath,
+    /// an environment variable's value: text, or a catalog package's location, the record it
+    /// carries.
+    EnvValue(Record),
     /// a schema written with `shikumi.lib.types`, such as an extension namespace's.
     Schema,
+    /// a field that would be a second overlay beside the catalog's `overrides`, refused wherever
+    /// it's set.
+    SecondOverlay,
+}
+
+/// the variables a shell sets itself, which no project or toolchain may define, and why.
+pub const RESERVED_VARIABLES: &[(&str, &str)] = &[(
+    "PATH",
+    "is the shell's path, which the packages its sources pick make",
+)];
+
+/// what an attribute set's names have to be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Identifier,
+    /// an environment variable's name.
+    Variable,
+    /// a nixpkgs attribute's name.
+    Attribute,
+}
+
+impl Key {
+    pub fn valid(self, name: &str) -> bool {
+        match self {
+            Self::Identifier => Scalar::Identifier.valid(name),
+            Self::Variable => is_variable(name),
+            Self::Attribute => is_attribute(name),
+        }
+    }
+
+    pub fn accepts(self) -> &'static str {
+        match self {
+            Self::Identifier => Scalar::Identifier.accepts(),
+            Self::Variable => VARIABLE_ACCEPTS,
+            Self::Attribute => ATTRIBUTE_ACCEPTS,
+        }
+    }
+
+    /// why a name of this kind can't be given at all, where it can't: the variables the shell sets
+    /// itself.
+    pub fn reserved(self, name: &str) -> Option<&'static str> {
+        match self {
+            Self::Variable => RESERVED_VARIABLES
+                .iter()
+                .find(|(reserved, _)| *reserved == name)
+                .map(|(_, why)| *why),
+            Self::Identifier | Self::Attribute => None,
+        }
+    }
+
+    /// what stands for any name of this kind in a field's path on the reference page.
+    pub fn placeholder(self) -> &'static str {
+        match self {
+            Self::Identifier => "<name>",
+            Self::Variable => "<variable>",
+            Self::Attribute => "<attribute>",
+        }
+    }
 }
 
 /// a record's fields in the order they're shown, and an index by name: a repository's
@@ -96,6 +167,7 @@ pub enum Presence {
 /// default is never a value someone has to know was chosen for them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Empty {
+    Null,
     List,
     Set,
 }
@@ -104,6 +176,7 @@ impl Empty {
     /// the default as the document carries it.
     pub fn json(self) -> Value {
         match self {
+            Self::Null => Value::Null,
             Self::List => Value::Array(Vec::new()),
             Self::Set => Value::Object(serde_json::Map::new()),
         }
@@ -112,6 +185,7 @@ impl Empty {
     /// the default as a Nix expression, for the reference page.
     pub fn nix(self) -> &'static str {
         match self {
+            Self::Null => "null",
             Self::List => "[ ]",
             Self::Set => "{ }",
         }
@@ -151,9 +225,10 @@ impl Type {
                     non_empty,
                 })
             }
-            "attrs" if only(&["_tag", "element"]) => Some(Self::Attrs(Box::new(
-                Self::from_schema(&fields.get("element")?.value)?,
-            ))),
+            "attrs" if only(&["_tag", "element"]) => Some(Self::Attrs {
+                key: Key::Identifier,
+                element: Box::new(Self::from_schema(&fields.get("element")?.value)?),
+            }),
             "record" if only(&["_tag", "fields"]) => {
                 let declared = attrs(&fields.get("fields")?.value)?;
                 let mut record = Vec::with_capacity(declared.len());
@@ -184,10 +259,14 @@ impl Type {
         }
     }
 
-    /// whether a checked value of this type goes into the registry document. a command line is
-    /// checked like any other value and then left out, since the document has no field for it.
+    /// whether a checked value of this type goes into the registry document. a command line, a
+    /// function, a schema and a second overlay are checked like any other value and then left
+    /// out, since the document has no field for them.
     pub fn carried(&self) -> bool {
-        !matches!(self, Self::Command | Self::Schema)
+        !matches!(
+            self,
+            Self::Command | Self::Function | Self::Schema | Self::SecondOverlay
+        )
     }
 
     /// the type as the reference page names it, in `shikumi.lib.types`' own words.
@@ -196,7 +275,20 @@ impl Type {
             Self::Scalar(kind) => kind.tag().to_owned(),
             Self::Json => "json".to_owned(),
             Self::Command => "command line".to_owned(),
+            Self::Function => "function".to_owned(),
+            Self::AttributePath => "nixpkgs attribute path".to_owned(),
+            Self::EnvValue(location) => {
+                let fields: Vec<&str> = location.names().collect();
+                format!(
+                    "text, or a catalog package's location, `{{ {}; }}`",
+                    fields.join("; ")
+                )
+            }
             Self::Schema => "schema".to_owned(),
+            Self::SecondOverlay => format!(
+                "refused: the one overlay is the catalog's `{}`",
+                names::OVERRIDES
+            ),
             Self::Enum(values) => {
                 let shown: Vec<String> = values.iter().map(|v| format!("`{v}`")).collect();
                 format!("one of {}", shown.join(", "))
@@ -205,7 +297,18 @@ impl Type {
                 let list = if *non_empty { "non-empty list" } else { "list" };
                 format!("{list} of {}", element.describe())
             }
-            Self::Attrs(element) => format!("attribute set of {}", element.describe()),
+            Self::Attrs {
+                key: Key::Identifier,
+                element,
+            } => format!("attribute set of {}", element.describe()),
+            Self::Attrs {
+                key: Key::Variable,
+                element,
+            } => format!("attribute set of {} by variable name", element.describe()),
+            Self::Attrs {
+                key: Key::Attribute,
+                element,
+            } => format!("attribute set of {} by attribute name", element.describe()),
             Self::Record(_) => "record".to_owned(),
         }
     }
@@ -243,7 +346,18 @@ pub mod names {
     pub const SERVICES: &str = "services";
     pub const RESTART: &str = "restart";
     pub const EXTENSIONS: &str = "extensions";
+    pub const IMPORTS: &str = "imports";
+    pub const PACKAGES: &str = "packages";
+    pub const ENV: &str = "env";
+    pub const TOOLCHAINS: &str = "toolchains";
+    pub const OVERRIDES: &str = "overrides";
+    pub const OVERLAYS: &str = "overlays";
+    pub const REASON: &str = "reason";
+    pub const RELEASE: &str = "release";
+    pub const PACKAGE: &str = "package";
+    pub const PATH: &str = "path";
     pub const DIRECTORY: &str = "directory";
+    pub const SYSTEMS: &str = "systems";
 }
 
 /// a field of the manifest. this is the one definition of the manifest's shape: [`manifest`] is
@@ -253,15 +367,17 @@ pub mod names {
 pub enum ManifestField {
     Projects,
     Extensions,
+    Catalog,
 }
 
 impl ManifestField {
-    pub const ALL: &'static [Self] = &[Self::Projects, Self::Extensions];
+    pub const ALL: &'static [Self] = &[Self::Projects, Self::Extensions, Self::Catalog];
 
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Projects => "projects",
             Self::Extensions => "extensions",
+            Self::Catalog => "catalog",
         }
     }
 
@@ -273,14 +389,19 @@ impl ManifestField {
     pub fn field(self) -> Field {
         match self {
             Self::Projects => field(
-                Type::Attrs(Box::new(Type::Scalar(Scalar::Path))),
+                named(Key::Identifier, Type::Scalar(Scalar::Path)),
                 Presence::Required,
                 "each project's directory, by project name",
             ),
             Self::Extensions => field(
-                Type::Attrs(Box::new(Type::Schema)),
+                named(Key::Identifier, Type::Schema),
                 empty_set(),
                 "the schema of each extension namespace, written with `shikumi.lib.types`",
+            ),
+            Self::Catalog => field(
+                catalog_entry(),
+                Presence::Optional,
+                "the repository's catalog; without one, a project can pick no package",
             ),
         }
     }
@@ -331,23 +452,29 @@ pub fn document_value(value: Value, directory: &RelativePath) -> Value {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Definition {
     Declaration,
+    PackageLocation,
     Manifest,
+    Catalog,
 }
 
 impl Definition {
-    pub const ALL: &'static [Self] = &[Self::Declaration, Self::Manifest];
+    pub const ALL: &'static [Self] = &[
+        Self::Declaration,
+        Self::PackageLocation,
+        Self::Manifest,
+        Self::Catalog,
+    ];
 
     /// the definition itself, with no extension schemas.
     pub fn record(self) -> Type {
         match self {
             Self::Declaration => declaration(&BTreeMap::new()),
+            Self::PackageLocation => Type::Record(package_location()),
             Self::Manifest => Type::Record(manifest()),
+            Self::Catalog => catalog(),
         }
     }
 }
-
-/// what stands for any identifier in a field's path on the reference page.
-pub const NAME_PLACEHOLDER: &str = "<name>";
 
 /// what the manifest may say.
 pub fn manifest() -> Record {
@@ -389,6 +516,52 @@ fn identifiers() -> Type {
         element: Box::new(Type::Scalar(Scalar::Identifier)),
         non_empty: false,
     }
+}
+
+fn named(key: Key, element: Type) -> Type {
+    Type::Attrs {
+        key,
+        element: Box::new(element),
+    }
+}
+
+// an environment: variables by name, each text or a catalog package's location.
+fn env(description: &'static str) -> Field {
+    field(
+        named(Key::Variable, Type::EnvValue(package_location())),
+        empty_set(),
+        description,
+    )
+}
+
+// catalog packages by catalog name.
+fn packages(description: &'static str) -> Field {
+    field(identifiers(), empty_list(), description)
+}
+
+/// where in a catalog package an environment variable points.
+pub fn package_location() -> Record {
+    let Type::Record(location) = record(vec![
+        (
+            names::PACKAGE,
+            field(
+                Type::Scalar(Scalar::Identifier),
+                Presence::Required,
+                "the catalog package, by catalog name",
+            ),
+        ),
+        (
+            names::PATH,
+            field(
+                Type::Scalar(Scalar::Path),
+                Presence::Default(Empty::Null),
+                "a path inside it; null points at the package itself",
+            ),
+        ),
+    ]) else {
+        unreachable!("`record` builds a record");
+    };
+    location
 }
 
 /// what a project declaration may say, given the schemas the repository declared for its
@@ -441,26 +614,66 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
                             "listed projects it depends on; a focused composition takes them with it",
                         ),
                     ),
+                    (
+                        names::IMPORTS,
+                        field(
+                            named(Key::Identifier, Type::Scalar(Scalar::Identifier)),
+                            empty_set(),
+                            "toolchains it uses from other projects: each toolchain's name, and the project that defines it, which a focused composition takes with it",
+                        ),
+                    ),
                 ]),
                 Required,
                 "the project itself",
             ),
         ),
         (
+            names::PACKAGES,
+            packages("catalog packages on its shells' path, by catalog name"),
+        ),
+        (
+            names::ENV,
+            env("environment variables its shells and steps get, by name"),
+        ),
+        (
+            names::TOOLCHAINS,
+            field(
+                named(
+                    Key::Identifier,
+                    record(vec![
+                        (names::DESCRIPTION, description()),
+                        (
+                            names::PACKAGES,
+                            packages("catalog packages on the path of every project that uses it"),
+                        ),
+                        (
+                            names::ENV,
+                            env("environment variables every project that uses it gets"),
+                        ),
+                    ]),
+                ),
+                empty_set(),
+                "toolchain settings it owns, by a name no other project defines; other projects import them",
+            ),
+        ),
+        (
             names::STEPS,
             field(
-                Type::Attrs(Box::new(record(vec![
-                    (names::DESCRIPTION, description()),
-                    (names::EXEC, exec()),
-                    (
-                        names::AFTER,
-                        field(
-                            identifiers(),
-                            empty_list(),
-                            "steps of the same project this one runs after when both run",
+                named(
+                    Key::Identifier,
+                    record(vec![
+                        (names::DESCRIPTION, description()),
+                        (names::EXEC, exec()),
+                        (
+                            names::AFTER,
+                            field(
+                                identifiers(),
+                                empty_list(),
+                                "steps of the same project this one runs after when both run",
+                            ),
                         ),
-                    ),
-                ]))),
+                    ]),
+                ),
                 empty_set(),
                 "the project's steps, by name",
             ),
@@ -468,10 +681,13 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
         (
             names::COMMANDS,
             field(
-                Type::Attrs(Box::new(record(vec![
-                    (names::DESCRIPTION, description()),
-                    (names::EXEC, exec()),
-                ]))),
+                named(
+                    Key::Identifier,
+                    record(vec![
+                        (names::DESCRIPTION, description()),
+                        (names::EXEC, exec()),
+                    ]),
+                ),
                 empty_set(),
                 "entry points on the shell's path, by a name unique across the composition",
             ),
@@ -479,23 +695,26 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
         (
             names::SERVICES,
             field(
-                Type::Attrs(Box::new(record(vec![
-                    (names::DESCRIPTION, description()),
-                    (names::EXEC, exec()),
-                    (
-                        names::RESTART,
-                        field(
-                            Type::Enum(
-                                Restart::ALL
-                                    .iter()
-                                    .map(|restart| restart.as_str().to_owned())
-                                    .collect(),
+                named(
+                    Key::Identifier,
+                    record(vec![
+                        (names::DESCRIPTION, description()),
+                        (names::EXEC, exec()),
+                        (
+                            names::RESTART,
+                            field(
+                                Type::Enum(
+                                    Restart::ALL
+                                        .iter()
+                                        .map(|restart| restart.as_str().to_owned())
+                                        .collect(),
+                                ),
+                                Required,
+                                "when the supervisor restarts it",
                             ),
-                            Required,
-                            "when the supervisor restarts it",
                         ),
-                    ),
-                ]))),
+                    ]),
+                ),
                 empty_set(),
                 "long-running workers, by a name unique across the composition",
             ),
@@ -520,6 +739,113 @@ pub fn declaration(extensions: &BTreeMap<String, Type>) -> Type {
                 )),
                 empty_set(),
                 "the repository's own metadata, one namespace per schema its manifest declares",
+            ),
+        ),
+        (names::OVERRIDES, second_overlay()),
+    ])
+}
+
+fn second_overlay() -> Field {
+    field(
+        Type::SecondOverlay,
+        Presence::Optional,
+        "never set: the repository has one overlay, the catalog's",
+    )
+}
+
+/// what the catalog's file may say. this is the one definition of the catalog record.
+pub fn catalog() -> Type {
+    use Presence::Required;
+    record(vec![
+        (
+            names::PACKAGES,
+            field(
+                named(Key::Identifier, Type::AttributePath),
+                empty_set(),
+                "every package a shell or step may use, by the name projects pick it with, each its attribute path in the pinned nixpkgs",
+            ),
+        ),
+        (
+            names::OVERRIDES,
+            field(
+                named(
+                    Key::Attribute,
+                    record(vec![
+                        (
+                            names::REASON,
+                            field(Type::Scalar(Scalar::Text), Required, "why the entry exists"),
+                        ),
+                        (
+                            names::RELEASE,
+                            field(Type::Scalar(Scalar::Text), Required, "what lets it go"),
+                        ),
+                        (
+                            names::PACKAGE,
+                            field(
+                                Type::Function,
+                                Required,
+                                "`final: prev: ...`, what the attribute becomes, as in an overlay",
+                            ),
+                        ),
+                    ]),
+                ),
+                empty_set(),
+                "the one overlay on the pinned nixpkgs, an entry per attribute it replaces or adds",
+            ),
+        ),
+        (names::OVERLAYS, second_overlay()),
+    ])
+}
+
+/// the catalog as the registry document carries it: the catalog record's carried fields, and the
+/// systems the manifest reads it for beside them. document.rs's `Catalog` is this record's serde
+/// shape, which a test holds to it, and its schema's descriptions are these.
+pub fn document_catalog() -> Record {
+    let (Type::Record(entry), Type::Record(read)) = (catalog_entry(), catalog()) else {
+        unreachable!("the catalog and its manifest entry are records");
+    };
+    let systems = entry
+        .get(names::SYSTEMS)
+        .cloned()
+        .expect("the manifest's catalog entry names its systems");
+    let mut fields = vec![(names::SYSTEMS.to_owned(), systems)];
+    fields.extend(read.fields().iter().cloned());
+    Record::new(fields)
+}
+
+/// the catalog's checked value reshaped as [`document_catalog`] describes it, with the systems
+/// the manifest's checked entry names.
+pub fn document_catalog_value(value: Value, entry: &Value) -> Value {
+    let Value::Object(mut fields) = value else {
+        return value;
+    };
+    if let Some(systems) = entry.get(names::SYSTEMS) {
+        fields.insert(names::SYSTEMS.to_owned(), systems.clone());
+    }
+    Value::Object(fields)
+}
+
+/// what the manifest's catalog entry says: where the catalog is and the systems it's read for.
+pub fn catalog_entry() -> Type {
+    use Presence::Required;
+    record(vec![
+        (
+            names::DIRECTORY,
+            field(
+                Type::Scalar(Scalar::Path),
+                Required,
+                "the directory holding the catalog's file",
+            ),
+        ),
+        (
+            names::SYSTEMS,
+            field(
+                Type::List {
+                    element: Box::new(Type::Scalar(Scalar::Text)),
+                    non_empty: true,
+                },
+                Required,
+                "the systems its package set is read for, each one the pinned nixpkgs knows, such as `x86_64-linux`",
             ),
         ),
     ])
@@ -618,10 +944,10 @@ mod tests {
                 "everything".to_owned(),
                 Field {
                     ty: Type::List {
-                        element: Box::new(Type::Attrs(Box::new(Type::Enum(vec![
-                            "a".to_owned(),
-                            "b".to_owned(),
-                        ])))),
+                        element: Box::new(Type::Attrs {
+                            key: Key::Identifier,
+                            element: Box::new(Type::Enum(vec!["a".to_owned(), "b".to_owned()])),
+                        }),
                         non_empty: true,
                     },
                     presence: Presence::Required,

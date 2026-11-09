@@ -11,7 +11,13 @@ shikumi.project (
         "design"
       ];
       dependsOn = [ "core" ];
+      imports.jdk = "core";
     };
+    packages = [
+      "kotlin"
+      "nodejs"
+    ];
+    env.NODE_ENV = "development";
     steps.bundle = {
       description = "Bundle the site";
       exec = "bundle --release";

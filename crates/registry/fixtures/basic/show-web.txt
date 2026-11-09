@@ -3,6 +3,10 @@ web
   summary      The web front end
   maintainers  web-team, design
   depends on   core
+  imports      jdk from core
+  packages     kotlin, nodejs
+  env
+    NODE_ENV  "development"
   steps
     bundle  Bundle the site
   commands

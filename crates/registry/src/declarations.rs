@@ -1,9 +1,9 @@
-//! the `shikumi.declarations` contract: the manifest and every composed declaration as the
-//! declaration layer serialized them, or why evaluating one failed, which is what the checker
-//! reads. every value arrives as a tagged node saying what kind of Nix value it was, and every
-//! attribute with the source position the evaluator gave it, so a value of the wrong kind is
-//! something to report rather than something that failed to parse. what the values mean is the
-//! checker's; this module only reads the shape.
+//! the `shikumi.declarations` contract: the manifest, the catalog as each system reads it, and every
+//! composed declaration as the declaration layer serialized them, or why evaluating one failed,
+//! which is what the checker reads. every value arrives as a tagged node saying what kind of Nix
+//! value it was, and every attribute with the source position the evaluator gave it, so a value of
+//! the wrong kind is something to report rather than something that failed to parse. what the
+//! values mean is the checker's; this module only reads the shape.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -37,6 +37,9 @@ pub struct Declarations {
     #[serde(deserialize_with = "Option::deserialize")]
     pub focus: Option<String>,
     pub manifest: Evaluated<Manifest>,
+    /// the catalog the manifest declares, or null where it declares none.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub catalog: Option<Catalog>,
     /// every composed project by its manifest name; null where the manifest's entry names no
     /// declaration file.
     pub projects: BTreeMap<String, Option<Evaluated<Declaration>>>,
@@ -46,6 +49,7 @@ impl Declarations {
     pub fn new(
         focus: Option<String>,
         manifest: Evaluated<Manifest>,
+        catalog: Option<Catalog>,
         projects: BTreeMap<String, Option<Evaluated<Declaration>>>,
     ) -> Self {
         Self {
@@ -53,6 +57,7 @@ impl Declarations {
             version: DeclarationsVersion,
             focus,
             manifest,
+            catalog,
             projects,
         }
     }
@@ -178,6 +183,47 @@ pub struct Declaration {
     /// returned instead.
     pub factory: bool,
     pub value: Node,
+}
+
+/// the catalog, read once for each system the manifest names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = require_every_property)]
+pub struct Catalog {
+    /// the catalog's file, or null where the directory the manifest names holds none; then no
+    /// system is read.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub file: Option<RelativePath>,
+    /// each system the manifest names as text, and the catalog read for it, or null for a system
+    /// the pinned nixpkgs doesn't know.
+    pub systems: BTreeMap<String, Option<Evaluated<CatalogRead>>>,
+}
+
+/// the catalog as one system's package set gives it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogRead {
+    /// the catalog file's value, serialized like a declaration: its packages are derivations, and
+    /// its overlay's builds functions.
+    pub value: Node,
+    /// each entry of `packages` that is a package, by catalog name, as the package's `name`.
+    pub packages: BTreeMap<String, String>,
+    /// every package reachable from those through propagation, by `name`.
+    pub graph: BTreeMap<String, Package>,
+}
+
+/// what evaluation can see of a package without building it: what it's called, the program it
+/// runs as, and the packages it propagates into whatever depends on it, by `name`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[schemars(transform = require_every_property)]
+pub struct Package {
+    pub pname: String,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub version: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub main_program: Option<String>,
+    pub propagates: Vec<String>,
 }
 
 /// one Nix value, tagged with what kind of value it was.
@@ -316,6 +362,7 @@ mod tests {
                 "version": {"major": 1, "minor": 0},
                 "focus": null,
                 "manifest": {"file": "shikumi.nix", "value": value},
+                "catalog": null,
                 "projects": {}
             })
         };

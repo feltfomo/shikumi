@@ -50,6 +50,26 @@
           "required": [
             "projects"
           ]
+        },
+        {
+          "description": "the catalog as the asked system reads it, or null for a system the pinned nixpkgs doesn't\nknow.",
+          "type": "object",
+          "properties": {
+            "catalog": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CatalogRead"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "catalog"
+          ]
         }
       ]
     },
@@ -76,6 +96,36 @@
         "file",
         "line",
         "column"
+      ]
+    },
+    "CatalogRead": {
+      "description": "the catalog as one system's package set gives it.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "description": "every package reachable from those through propagation, by `name`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Package"
+          }
+        },
+        "packages": {
+          "description": "each entry of `packages` that is a package, by catalog name, as the package's `name`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "value": {
+          "description": "the catalog file's value, serialized like a declaration: its packages are derivations, and\nits overlay's builds functions.",
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "packages",
+        "graph"
       ]
     },
     "Declaration": {
@@ -374,9 +424,54 @@
         }
       ]
     },
+    "Package": {
+      "description": "what evaluation can see of a package without building it: what it's called, the program it\nruns as, and the packages it propagates into whatever depends on it, by `name`.",
+      "type": "object",
+      "properties": {
+        "mainProgram": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pname": {
+          "type": "string"
+        },
+        "propagates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mainProgram",
+        "pname",
+        "propagates",
+        "version"
+      ]
+    },
     "Plan": {
       "type": "object",
       "properties": {
+        "catalog": {
+          "description": "the catalog the manifest declares, or null where it declares none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlannedCatalog"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "files": {
           "description": "every listed project's declaration file, relative to the root, or null where the\nmanifest's entry names none.",
           "type": "object",
@@ -397,8 +492,38 @@
       },
       "additionalProperties": false,
       "required": [
+        "catalog",
         "files",
         "manifest"
+      ]
+    },
+    "PlannedCatalog": {
+      "description": "where the catalog is and which systems it's read for.",
+      "type": "object",
+      "properties": {
+        "file": {
+          "description": "the catalog's file, relative to the root, or null where its directory holds none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "systems": {
+          "description": "the systems the manifest names, as far as they're text, in its order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "systems"
       ]
     },
     "RelativePath": {

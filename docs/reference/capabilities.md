@@ -10,7 +10,7 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | [Where it runs](#where-it-runs)                               | CppNix, Determinate Nix and Lix, on Linux (WSL 2 included) and macOS on Apple silicon | Accepted target |
 | [Declarations](#declarations)                                 | projects that declare themselves, checked in one pass     | Current         |
 | [Registry document](#registry-document)                       | one versioned JSON view of every project                  | Current         |
-| [Packages and toolchains](#packages-overrides-and-toolchains) | one catalog, one owner per setting                        | Accepted target |
+| [Packages and toolchains](#packages-overrides-and-toolchains) | one catalog, one owner per setting                        | Current; the pin waits on the lock |
 | [Lock](#lock)                                                 | one lock for toolchains and third-party artifacts         | Accepted target |
 | [Build graph](#build-graph)                                   | per-stage caching in the store, early cutoff, queries     | Accepted target |
 | [Execution mechanism](#execution-mechanism)                   | how each unit actually runs                               | Open            |
@@ -18,7 +18,7 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | [Rust below the crate](#rust-below-the-crate)                 | caching finer than one crate                              | Open            |
 | [IDE project models](#ide-project-models)                     | the model each IDE needs, from the build                  | Accepted target |
 | [Steps and verbs](#steps-verbs-and-tasks)                     | derived tasks, cached steps and tests                     | Accepted target |
-| [Shells](#shells)                                             | focused and global shells for bash, zsh and fish          | Accepted target |
+| [Shells](#shells)                                             | focused and global shells for bash, zsh and fish          | Accepted target; environment declarations current |
 | [Services](#services)                                         | per-worktree services under Shikumi's own supervisor      | Accepted target |
 | [Hooks](#hooks)                                               | per-project format and lint hooks, per worktree           | Accepted target |
 | [Formatting](#formatting)                                     | one formatter per file, cache shared across worktrees     | Accepted target |
@@ -119,8 +119,9 @@ shikumi.project (
 )
 ```
 
-- **Declarations are plain records**: a flat set of small records, `project`, `steps`, `commands`,
-  `services` and `extensions`, with a step's `after` as the one ordering edge. What a project writes
+- **Declarations are plain records**: a flat set of small records, `project`, `packages`, `env`,
+  `toolchains`, `steps`, `commands`, `services` and `extensions`, with a step's `after` as the one
+  ordering edge. What a project writes
   is what Shikumi reads, with no merge order and no priorities. A large declaration splits across
   files with plain `import` and `//`, and a condition is `lib.optionalAttrs` or a list of entries.
   Composition across projects is the manifest.
@@ -132,8 +133,10 @@ shikumi.project (
 - **Checking in one pass.** Shikumi's checker, in Rust, checks every composed project at once against
   the declaration record and the repository's extension schemas, then across projects: a dependency
   names a listed project, a step runs after a step of its own project, neither dependencies nor steps
-  loop, a command or service name has one owner, every listed directory has a declaration, and no
-  listed directory lies inside another.
+  loop, a command, service or toolchain name has one owner, every toolchain import names a toolchain
+  its project defines, every package picked is in the catalog, no shell gets one variable twice or
+  two packages under one name, every listed directory has a declaration, and no listed directory
+  lies inside another.
   It returns every finding, each with a stable code, the field's path and its source position.
 - **Source positions.** Every attribute keeps the file, line and column that defined it, through
   `import` and `//` too, relative to the repository root. A list element has no position of its own,
@@ -168,8 +171,8 @@ error[unknown-reference]: `project.dependsOn[1]` names `nowhere`, which isn't a 
   flake-parts module is tested against a copy of flake-parts' own option declarations, not
   flake-parts itself, so it's unverified there.
 - **Compositions.** The global composition holds every project plus the remainder. A focused
-  composition holds one project and every project it depends on, transitively, and never reads any
-  other declaration.
+  composition holds one project, every project it depends on and every project whose toolchain it
+  imports, transitively, and never reads any other declaration. Both read the whole catalog.
 - **The remainder** is the scope of every source outside the listed directories.
 - **Evaluation failures.** A declaration that Nix can't evaluate, because it doesn't parse, uses a
   variable nothing defines, calls something that isn't a function, throws, fails an assertion or
@@ -196,9 +199,10 @@ note: reached from here
  --> projects/thrown/project.nix:7:15
 ```
 
-People author declarations in Nix, and the real Nix evaluator runs them. `shikumi.lib` takes nixpkgs'
-`lib` from whoever imports it, and the `shikumi` package evaluates with the nixpkgs its flake pins.
-Pinning that nixpkgs in Shikumi's own [lock](#lock) is an accepted target.
+People author declarations in Nix, and the real Nix evaluator runs them. `shikumi.lib` takes the
+nixpkgs source tree from whoever imports it, runs on its `lib` and reads its package set for the
+catalog, and the `shikumi` package evaluates with the nixpkgs its flake pins. Pinning that nixpkgs
+in Shikumi's own [lock](#lock) is an accepted target.
 
 ## Registry document
 
@@ -218,9 +222,12 @@ Pinning that nixpkgs in Shikumi's own [lock](#lock) is an accepted target.
   the schema [`declarations.schema.json`](../../crates/registry/schema/declarations.schema.json),
   and so is each evaluation's answer, with
   [`evaluation.schema.json`](../../crates/registry/schema/evaluation.schema.json).
-- **What it holds.** Each project's directory, summary, maintainers, dependencies, steps, commands,
-  services and extension metadata, the composition's focus, the remainder, and the diagnostics. A
-  step's or command's command line is declared and never copied in.
+- **What it holds.** Each project's directory, summary, maintainers, dependencies, toolchain imports
+  with the project each comes from, packages, environment variables, the toolchains it owns, steps,
+  commands, services and extension metadata; the catalog's systems, its package names and each
+  override's reason and release; the composition's focus, the remainder, and the diagnostics. A
+  step's or command's command line and an override's build are declared and never copied in, and
+  neither is a package: the document names packages by their catalog name and holds no store path.
 - **Identical across worktrees.** Two worktrees of one commit, at any paths, produce the same bytes,
   on every supported Nix, and every implementation serializes the same declarations and yields the
   same findings for a declaration that doesn't inspect the evaluator. One that asks which evaluator
@@ -255,16 +262,121 @@ shikumi registry schema declarations
 
 ## Packages, overrides and toolchains
 
-Status: accepted target.
+| Capability                                                                      | Status          |
+| ------------------------------------------------------------------------------- | --------------- |
+| One catalog naming every package a shell or step may use, picked by name        | Current         |
+| A package outside the catalog refused                                           | Current         |
+| Two packages under one name on one path, propagated inputs included, refused    | Current         |
+| One overlay on the pinned nixpkgs, each entry with its reason and its release   | Current         |
+| The catalog read for every system the manifest names                            | Current         |
+| The pinned nixpkgs held in Shikumi's own lock                                   | Limited, waits on the lock |
+| One owning project per toolchain setting, imported by name                      | Current         |
+| The catalog's packages resolved to store paths for the toolchain context        | Accepted target |
+| Repository tools built as derivations, so entering a shell never compiles a tool | Accepted target |
 
-- **Catalog.** Every package a shell or step may use is named once, in the repository's catalog.
-  Projects pick by name. A package outside the catalog is refused.
-- **Conflicts.** Two definitions of one name on the shell's path, propagated inputs included, are
-  refused with both files named. That's the check that catches a JDK 21 against a JDK 25.
-- **Overrides.** One overlay on the pinned nixpkgs. Each entry states why it exists and what lets it
-  go.
-- **Single-owner toolchain settings.** A setting such as the JDK or the Rust toolchain has exactly one
-  owning project. Other projects import it by name, and a second definition is refused.
+A repository names its catalog in the manifest: a directory holding `catalog.nix`, and the systems
+its package set is read for. The catalog is called with nixpkgs' `lib` and names each package by its
+attribute path in the pinned nixpkgs, such as `jdk21` or `nodePackages.prettier`. Shikumi resolves
+each path in every system's package set, with the catalog's own overlay applied.
+
+```nix
+# shikumi.nix
+{
+  projects = {
+    core = "libs/core";
+    web = "apps/web";
+  };
+  catalog = {
+    directory = "catalog";
+    systems = [
+      "x86_64-linux"
+      "aarch64-darwin"
+    ];
+  };
+}
+```
+
+```nix
+# catalog/catalog.nix
+_: {
+  packages = {
+    jdk = "jdk21";
+    kotlin = "kotlin";
+    nodejs = "nodejs";
+  };
+  overrides.kotlin = {
+    reason = "Kotlin runs on the JDK every JVM project builds with";
+    release = "nixpkgs' own choice of JDK for Kotlin is the repository's";
+    package = final: prev: prev.kotlin.override { jre = final.jdk21; };
+  };
+}
+```
+
+```nix
+# libs/core/project.nix: owns the JDK toolchain
+toolchains.jdk = {
+  description = "The JDK every JVM project builds and runs with";
+  packages = [ "jdk" ];
+  env.JAVA_HOME.package = "jdk";
+};
+
+# apps/web/project.nix: uses it, and picks packages of its own
+project.imports.jdk = "core";
+packages = [ "kotlin" "nodejs" ];
+env.NODE_ENV = "development";
+```
+
+- **Catalog.** Every package a shell or step may use is named once, under the catalog's `packages`,
+  and projects and toolchains pick packages by that name, for their path or for a variable that
+  points into one. A name the catalog doesn't hold is refused, and so is any pick in a repository
+  without a catalog. The catalog is read once for each system the manifest names, each against that
+  system's own package set, since a package can differ between them: nixpkgs' JDK on Apple silicon
+  is a different build from Linux's. An entry whose path names no package on one of them, or a
+  package that throws as it's read, as an alias nixpkgs has removed does, is refused at the entry,
+  naming the system. A system nixpkgs doesn't know is refused at the manifest. A command line that
+  names a store path is refused too, since it would run a package the catalog doesn't hold: a
+  command runs what its shell's packages put on the path. A catalog that fails
+  to evaluate is its own finding, and nothing is checked against it, so it doesn't turn into every
+  project's finding.
+- **Conflicts.** A shell's path holds the packages its sources pick, and everything those packages
+  propagate. The global composition's shell holds every project and every toolchain; a focused
+  one holds its project, the toolchains that project defines and those it imports. Two different
+  packages on one path under one name are refused, naming both packages, both catalog entries, the
+  propagated input that brought one of them there, the system, and both files that put them there.
+  Two packages are different when their `name`, the `pname` and version nixpkgs writes, differs.
+  They're under one name when one's `pname` or `meta.mainProgram`, the program it runs as, is the
+  other's `pname` or `meta.mainProgram`. A clash between a project and a toolchain it uses is
+  reported at the project, and a clash between two of either at the later one in name order. That's the check that catches a JDK 21 against a JDK 25, whichever of them
+  arrives through another package's propagated inputs. Every propagation attribute is followed,
+  `propagatedBuildInputs`, `propagatedNativeBuildInputs`, the four `deps*Propagated` and
+  `propagatedUserEnvPkgs`, so a conflict is found however the shell takes its packages.
+- **What the conflict rule can't see.** It reads what evaluation shows of a package, never what the
+  package installs, since nothing may be built while declarations are read. So it misses two
+  packages that put the same program on the path when neither names it as its `mainProgram` and
+  their `pname`s differ, such as a `symlinkJoin` of a JDK under a name of its own; two builds that
+  share one `name`, such as an override that keeps the version, where only the first one reached is
+  followed; and a package whose build writes extra entries into its `nix-support/propagated-*`
+  files beyond its attributes.
+- **Overrides.** The catalog's `overrides` is the one overlay on the pinned nixpkgs, an entry per
+  attribute it replaces or adds, each with `package = final: prev: …`, as in an overlay, `reason`,
+  why it exists, and `release`, what lets it go. An entry missing either text is refused. The catalog
+  never sees a package set, so a package that differs from nixpkgs' can only come from an entry: a
+  catalog entry is an attribute path, with no `pkgs.extend` or `.override` to reach for. An overlay
+  declared anywhere else is refused as a second overlay: an `overlays` field in the catalog, or
+  `overrides` in a project's declaration.
+- **The pinned nixpkgs** is the one the `shikumi` package was built against. Holding it in Shikumi's
+  own [lock](#lock) is a target, and it waits on the lock.
+- **Single-owner toolchain settings.** A setting such as the JDK or the Rust toolchain is defined
+  under one project's `toolchains`, with a description, the packages it puts on the path and the
+  variables it sets. Another project uses it through `project.imports`, naming the toolchain and the
+  project that defines it, so a focused composition takes that project with it the way it takes a
+  dependency. A second definition of one toolchain is refused naming both files, and so is an import
+  of a toolchain its project doesn't define. A focused composition reads no declaration outside its
+  closure, so it sees a second definition only there; the global composition sees every one.
+- **Store paths.** Reading the catalog forces no package's `outPath` or `drvPath`, so it computes no
+  store path unless an override's own code does. The document names each package by its catalog
+  name and attribute path. Resolving the packages a toolchain names to store paths belongs to the
+  toolchain context, which reads them from the same catalog and is a target.
 - **Repository tools** are built as derivations, so entering a shell never compiles a tool.
 
 ## Lock
@@ -412,11 +524,22 @@ Status: accepted target.
 
 ## Shells
 
-Status: accepted target.
+| Capability                                                                | Status          |
+| ------------------------------------------------------------------------- | --------------- |
+| Environment variables declared on projects and toolchains, each once      | Current         |
+| Those variables reaching shells and steps                                 | Accepted target |
+| Everything else below                                                     | Accepted target |
 
 - **Activation replaces the path.** The caller's PATH doesn't leak in, and nothing is appended.
-- **Environment variables** are declared on projects and toolchains, and reach shells and steps
-  alike. Two definitions of one variable are refused with both files named.
+- **Environment variables** are declared under `env` on projects and toolchains: text, or where in
+  a catalog package a variable points, `{ package = "jdk"; path = "lib"; }`, which the toolchain
+  context resolves. A shell gets each variable from one place, so a second definition among a
+  shell's sources is refused with both files named. A project's variable and a toolchain's variable
+  of the same name are two definitions like any other: there's no precedence between them. The
+  global composition's shell holds every source, so there each variable has one definition across
+  the repository. `PATH` is refused: the shell sets it from its packages. The registry document
+  carries every variable's name and value. They reach shells and steps alike,
+  which is a target.
 - **Entry tasks and banner.** A project can declare steps that run on shell entry, and a banner.
 - **Cached entry** in 0.2 s or less when nothing changed. Invalidation is exact.
 - **Focused and global** shells follow the compositions.

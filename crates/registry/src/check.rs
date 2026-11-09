@@ -1,35 +1,40 @@
-//! the checker: the one place a declaration is judged. it reads the serialized manifest and
-//! declarations, checks every value against the declaration record and the repository's extension
-//! schemas, applies the rules that span projects, and returns the registry document: every project
-//! when nothing is wrong, or every finding at once when something is. nothing is thrown; each
-//! finding is collected with its code, the field's path and the nearest source position the
-//! evaluator gave, so one pass reports all of them. a declaration whose evaluation failed becomes
-//! a finding too, placed at the user's own code, and the projects around it are still checked.
+//! the checker: the one place a declaration is judged. it reads the serialized manifest, catalog and
+//! declarations, checks every value against the manifest's fields, the catalog's record, the
+//! declaration record and the repository's extension schemas, applies the rules that span projects
+//! and the rules on each shell's packages and variables, and returns the registry document: every
+//! project when nothing is wrong, or every finding at once when something is. nothing is thrown;
+//! each finding is collected with its code, the field's path and the nearest source position the
+//! evaluator gave, so one pass reports all of them. a declaration whose evaluation failed becomes a
+//! finding too, placed at the user's own code, and the projects around it are still checked.
 //!
 //! cost is linear in the size of the declarations: one visit per serialized node, one sort of the
-//! manifest's directories for overlaps, one walk of each ordering graph for loops, and one map per
-//! name space for duplicates. each project is checked on its own on Rayon's pool, and the findings
-//! are put back in name order, so the document is the same however the work was split. a finding's
-//! path is a stack pushed and popped on the way down, so locating one copies nothing until the
-//! finding is made.
+//! manifest's directories for overlaps, one walk of each ordering graph for loops, one map per name
+//! space for duplicates and per shell for variables, one lookup per package picked, and per system
+//! one visit to each package the shell's picks reach. each project is checked on its own on Rayon's
+//! pool, and the findings are put back in name order, so the document is the same however the work
+//! was split. a finding's path is a stack pushed and popped on the way down, so locating one copies
+//! nothing until the finding is made.
 
-use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use rayon::prelude::*;
 use serde_json::{Map, Value};
 
-use crate::contract::{RelativePath, Scalar};
+use crate::contract::{ATTRIBUTE_PATH_ACCEPTS, RelativePath, Scalar, is_attribute_path};
 use crate::declarations::{
-    At, Declaration, Declarations, Evaluated, Failure, FailureKind, Field, Manifest, Node, Origin,
+    At, CatalogRead, Declaration, Declarations, Evaluated, Failure, FailureKind, Field, Manifest,
+    Node, Origin,
 };
 use crate::document::{
-    Code, Diagnostic, Document, Identifier, Location, Project, Related, Remainder, SchemaName,
-    Segment, Severity, Step, Version, identifier, text,
+    Catalog, Code, Diagnostic, Document, Identifier, Location, Project, Related, Remainder,
+    SchemaName, Segment, Severity, ShellSource, Step, Variable, Version, claims, identifier, shell,
+    text,
 };
 use crate::graph::{self, Edge};
-use crate::layer::{DECLARATION, MANIFEST};
-use crate::vocabulary::{self, ManifestField, Presence, Record, Type, names};
+use crate::layer::{CATALOG, DECLARATION, MANIFEST};
+use crate::vocabulary::{self, Key, ManifestField, Presence, Record, Type, names};
 
 /// how many of the places in the user's code that led to a failure are shown after the one it
 /// happened at; a recursion through the user's code can pass a handful of places many times.
@@ -48,7 +53,13 @@ pub fn check(declarations: &Declarations, root: &str) -> Result<Document, CheckE
             let file = RelativePath::checked(MANIFEST.name.to_owned());
             let (here, path, report) = failure(&file, &failed.failure);
             let found = diagnostic(None, path, here, report);
-            Ok(document(vec![found], None, &BTreeMap::new(), Vec::new()))
+            Ok(document(
+                vec![found],
+                None,
+                &BTreeMap::new(),
+                Vec::new(),
+                None,
+            ))
         }
     }
 }
@@ -57,7 +68,8 @@ pub fn check(declarations: &Declarations, root: &str) -> Result<Document, CheckE
 /// record and the document's types disagree, which is a defect in Shikumi, not in the declaration.
 #[derive(Debug)]
 pub struct CheckError {
-    project: Identifier,
+    /// what was accepted: a project, by name, or the catalog.
+    subject: String,
     error: serde_json::Error,
 }
 
@@ -65,8 +77,8 @@ impl fmt::Display for CheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "the checker accepted `{}` in a shape the registry document can't hold, which is a defect in Shikumi: {}",
-            self.project, self.error
+            "the checker accepted {} in a shape the registry document can't hold, which is a defect in Shikumi: {}",
+            self.subject, self.error
         )
     }
 }
@@ -81,6 +93,8 @@ struct Checker<'a> {
     /// the project the findings being made belong to.
     project: Option<Identifier>,
     path: Vec<Segment>,
+    /// where the repository's one overlay is, for a finding about a second one.
+    overlay: Option<Location>,
 }
 
 /// where a value sits: the nearest attribute with a position, or the file it was read from.
@@ -149,11 +163,12 @@ struct Checked<'a> {
 }
 
 /// the name spaces in which a name has one owner across the composition: commands share the
-/// shell's path, and services are started by name.
+/// shell's path, services are started by name, and a toolchain is imported by name.
 #[derive(Clone, Copy)]
 enum Shared {
     Commands,
     Services,
+    Toolchains,
 }
 
 impl Shared {
@@ -161,6 +176,7 @@ impl Shared {
         match self {
             Self::Commands => names::COMMANDS,
             Self::Services => names::SERVICES,
+            Self::Toolchains => names::TOOLCHAINS,
         }
     }
 
@@ -168,8 +184,125 @@ impl Shared {
         match self {
             Self::Commands => Box::new(declared.commands.keys()),
             Self::Services => Box::new(declared.services.keys()),
+            Self::Toolchains => Box::new(declared.toolchains.keys()),
         }
     }
+
+    fn help(self, entry: &str, first: &Identifier) -> String {
+        match self {
+            Self::Commands | Self::Services => "give each one a name of its own".to_owned(),
+            Self::Toolchains => format!(
+                "a toolchain has one owner; use `{first}`'s instead: `{}.{}.{entry} = \"{first}\";`",
+                names::PROJECT,
+                names::IMPORTS,
+            ),
+        }
+    }
+}
+
+/// what the manifest says, as far as it says it right.
+struct Manifested {
+    directories: Directories,
+    extensions: BTreeMap<String, Type>,
+    /// the catalog the manifest declares: absent when it declares none, unread when its entry has a
+    /// finding of its own.
+    catalog: Declares<Value>,
+}
+
+enum Declares<T> {
+    Nothing,
+    Wrongly,
+    Rightly(T),
+}
+
+/// what the catalog came to, for the projects that pick from it.
+enum Cataloged<'a> {
+    /// the manifest declares no catalog.
+    Absent,
+    /// the catalog can't say what it holds: its manifest entry has a finding, its file is missing,
+    /// or it failed to evaluate. nothing is checked against it, so its own finding stands alone.
+    Unread,
+    Read(Box<CatalogState<'a>>),
+}
+
+struct CatalogState<'a> {
+    /// every name the catalog declares under `packages`, whatever its finding.
+    names: BTreeSet<&'a str>,
+    /// each system that evaluated, in the manifest's order, with what it read.
+    reads: Vec<(&'a str, &'a CatalogRead)>,
+    /// where the catalog's overlay is, for a finding that points at it.
+    overlay: Location,
+    /// where the catalog lists its packages, for a pick it doesn't hold.
+    listing: Location,
+    /// the catalog as the document carries it, when it had no finding.
+    accepted: Option<Catalog>,
+}
+
+/// one source of a shell, with the declaration it's located in.
+struct Source<'c, 'a> {
+    project: &'c Checked<'a>,
+    declaration: &'a Node,
+    shell: ShellSource<'c>,
+}
+
+impl<'c, 'a: 'c> Source<'c, 'a> {
+    /// how a finding names it.
+    fn named(&self) -> String {
+        match self.shell.toolchain {
+            None => format!("`{}`", self.project.name),
+            Some(toolchain) => format!("toolchain `{toolchain}` of `{}`", self.project.name),
+        }
+    }
+
+    // a variable's path in this source's declaration, and where it's defined.
+    fn variable(&self, variable: &Variable) -> (Vec<Segment>, Here<'c>) {
+        let mut path = source_prefix(&self.shell);
+        path.extend([
+            Segment::Field(names::ENV.to_owned()),
+            Segment::Field(variable.to_string()),
+        ]);
+        let here = locate_path(self.declaration, Here::File(&self.project.file), &path);
+        (path, here)
+    }
+}
+
+// where a source sits in its project's declaration: nothing for the project, the toolchain's field
+// for a toolchain.
+fn source_prefix(source: &ShellSource<'_>) -> Vec<Segment> {
+    match source.toolchain {
+        None => Vec::new(),
+        Some(toolchain) => vec![
+            Segment::Field(names::TOOLCHAINS.to_owned()),
+            Segment::Field(toolchain.to_string()),
+        ],
+    }
+}
+
+/// the two ways a package goes by a name on a path: the name nixpkgs gives it, and the program it
+/// runs as. both share one name space, since a package named `java` and a package that runs as
+/// `java` both put `java` on the path.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Called<'a> {
+    Name(&'a str),
+    Program(&'a str),
+}
+
+impl<'a> Called<'a> {
+    fn name(self) -> &'a str {
+        match self {
+            Self::Name(name) | Self::Program(name) => name,
+        }
+    }
+}
+
+/// the first package on a path to go by a name, how it goes by it, and how it got there.
+struct Claim<'a> {
+    called: Called<'a>,
+    package: &'a str,
+    source: usize,
+    index: usize,
+    picked: &'a str,
+    via: Option<&'a str>,
 }
 
 type Directories = BTreeMap<String, Option<RelativePath>>;
@@ -183,6 +316,7 @@ impl<'a> Checker<'a> {
             findings: Vec::new(),
             project: None,
             path: Vec::new(),
+            overlay: None,
         }
     }
 
@@ -194,10 +328,19 @@ impl<'a> Checker<'a> {
     fn run(mut self) -> Result<Document, CheckError> {
         let declarations = self.declarations;
         let manifest = self.manifest;
-        let (directories, extensions) = self.manifest(&manifest.value, Here::File(&manifest.file));
+        let Manifested {
+            directories,
+            extensions,
+            catalog,
+        } = self.manifest(&manifest.value, Here::File(&manifest.file));
 
         self.overlaps(&directories);
         let focus = self.focus(&directories);
+        let catalog = self.catalog(catalog)?;
+        self.overlay = match &catalog {
+            Cataloged::Read(state) => Some(state.overlay.clone()),
+            Cataloged::Absent | Cataloged::Unread => None,
+        };
 
         // built once per composition: the repository's extension schemas are the same for every
         // project.
@@ -211,50 +354,85 @@ impl<'a> Checker<'a> {
                     Some((identifier(name)?, directory, declaration.as_ref()))
                 })
                 .collect();
+        let overlay = &self.overlay;
         // collected in input order, so the findings stay in name order however the work was split.
         let each: Vec<(Vec<Diagnostic>, Checked<'a>)> = listed
             .into_par_iter()
             .map(|(project, directory, declaration)| {
                 let mut checker = Checker::new(declarations, manifest, self.root);
+                checker.overlay.clone_from(overlay);
                 let checked = checker.project(project, directory, declaration, &record)?;
                 Ok((checker.findings, checked))
             })
             .collect::<Result<_, CheckError>>()?;
         let (findings, checked): (Vec<_>, Vec<_>) = each.into_iter().unzip();
         self.findings.extend(findings.into_iter().flatten());
+        // `checked` is in name order; the index finds a project by name in one lookup.
+        let index: HashMap<&str, usize> = checked
+            .iter()
+            .enumerate()
+            .map(|(at, project)| (project.name.as_str(), at))
+            .collect();
+        let toolchains = self.claims(&checked, Shared::Toolchains);
         for project in &checked {
             self.references(project, &directories);
+            self.picks(project, &catalog);
+            self.imports(project, &checked, &index, &toolchains, &directories);
         }
         self.dependency_loops(&checked);
         for project in &checked {
             self.step_loops(project);
         }
-        self.duplicates(&checked, Shared::Commands);
-        self.duplicates(&checked, Shared::Services);
+        for shared in [Shared::Commands, Shared::Services] {
+            let claims = self.claims(&checked, shared);
+            self.duplicates(&checked, &index, &claims, shared);
+        }
+        self.duplicates(&checked, &index, &toolchains, Shared::Toolchains);
+        let sources = sources(&checked, &index, focus.as_ref());
+        self.environment(&sources);
+        if let Cataloged::Read(state) = &catalog {
+            for (system, read) in &state.reads {
+                self.conflicts(&sources, system, read);
+            }
+        }
 
-        Ok(self.document(focus, &directories, checked))
+        let catalog = match catalog {
+            Cataloged::Read(state) => state.accepted,
+            Cataloged::Absent | Cataloged::Unread => None,
+        };
+        Ok(document(
+            self.findings,
+            focus,
+            &directories,
+            checked,
+            catalog,
+        ))
     }
 
     // the manifest's fields: the listed directories by project name, None where an entry is
-    // invalid, and the extension schemas that are sound. each field is found in the manifest's
-    // one definition, and handled by what it is there.
-    fn manifest(
-        &mut self,
-        node: &'a Node,
-        here: Here<'a>,
-    ) -> (Directories, BTreeMap<String, Type>) {
+    // invalid, the extension schemas that are sound, and the catalog it declares. each field is
+    // found in the manifest's one definition, and handled by what it is there.
+    fn manifest(&mut self, node: &'a Node, here: Here<'a>) -> Manifested {
         let mut directories = BTreeMap::new();
         let mut extensions = BTreeMap::new();
+        let mut catalog = Declares::Nothing;
         let definition = vocabulary::manifest();
         let Some(fields) = self.attribute_set(node, here, "an attribute set") else {
-            return (directories, extensions);
+            return Manifested {
+                directories,
+                extensions,
+                catalog: Declares::Wrongly,
+            };
         };
         for (name, field) in fields {
             let here = here.within(field);
             self.path.push(Segment::Field(name.clone()));
             match ManifestField::named(name) {
                 Some(ManifestField::Projects) => {
-                    let Type::Attrs(directory) = ManifestField::Projects.field().ty else {
+                    let Type::Attrs {
+                        element: directory, ..
+                    } = ManifestField::Projects.field().ty
+                    else {
                         unreachable!("the manifest's projects are an attribute set");
                     };
                     if let Some(entries) =
@@ -296,13 +474,24 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
+                Some(ManifestField::Catalog) => {
+                    let entry = ManifestField::Catalog.field().ty;
+                    catalog = match self.value(&entry, &field.value, here) {
+                        Some(value) => Declares::Rightly(value),
+                        None => Declares::Wrongly,
+                    };
+                }
                 None if !self.safe_key(name, here) => {}
                 None => self.unknown_option(here, name, definition.names()),
             }
             self.path.pop();
         }
         self.missing(&definition, fields, here);
-        (directories, extensions)
+        Manifested {
+            directories,
+            extensions,
+            catalog,
+        }
     }
 
     // a schema a repository wrote with `shikumi.lib.types`, read as a type.
@@ -412,6 +601,161 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // the catalog: its manifest entry's file and systems, its record, and on each system that
+    // read it, what its entries resolve to. the catalog is called with nothing that differs
+    // between systems, so its value is the same on each, and the record is checked once.
+    fn catalog(&mut self, declared: Declares<Value>) -> Result<Cataloged<'a>, CheckError> {
+        let entry = match declared {
+            Declares::Nothing => return Ok(Cataloged::Absent),
+            Declares::Wrongly => return Ok(Cataloged::Unread),
+            Declares::Rightly(entry) => entry,
+        };
+        let manifest = self.manifest;
+        let at = |path: &[&str]| locate(&manifest.value, Here::File(&manifest.file), path);
+        let Some(read) = &self.declarations.catalog else {
+            return Ok(Cataloged::Unread);
+        };
+        let Some(file) = read.file.clone() else {
+            let directory = entry[names::DIRECTORY].as_str().unwrap_or_default();
+            self.path = vec![
+                Segment::Field(ManifestField::Catalog.name().to_owned()),
+                Segment::Field(names::DIRECTORY.to_owned()),
+            ];
+            self.report(
+                at(&[ManifestField::Catalog.name(), names::DIRECTORY]),
+                finding(
+                    Code::NoDeclaration,
+                    format!("names `{directory}`, which has no {}", CATALOG.name),
+                )
+                .help(format!("add `{directory}/{}`", CATALOG.name)),
+            );
+            self.path.clear();
+            return Ok(Cataloged::Unread);
+        };
+
+        let start = self.findings.len();
+        let mut readable = true;
+        let mut listed = BTreeSet::new();
+        let mut reads: Vec<(&'a str, &'a CatalogRead)> = Vec::new();
+        let systems = entry[names::SYSTEMS]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for (index, system) in systems.iter().filter_map(Value::as_str).enumerate() {
+            let path = vec![
+                Segment::Field(ManifestField::Catalog.name().to_owned()),
+                Segment::Field(names::SYSTEMS.to_owned()),
+                Segment::Index(index_segment(index)),
+            ];
+            let here = at(&[ManifestField::Catalog.name(), names::SYSTEMS]);
+            if !listed.insert(system) {
+                self.path = path;
+                self.report(
+                    here,
+                    finding(Code::Invalid, format!("lists `{system}` again")),
+                );
+                self.path.clear();
+                continue;
+            }
+            match read.systems.get_key_value(system) {
+                // the producer reads every system the manifest names as text.
+                None => readable = false,
+                Some((_, None)) => {
+                    self.path = path;
+                    self.report(
+                        here,
+                        finding(
+                            Code::Invalid,
+                            format!("names `{system}`, which the pinned nixpkgs doesn't know as a system"),
+                        )
+                        .help("name systems as nixpkgs does, such as `x86_64-linux` or `aarch64-darwin`"),
+                    );
+                    self.path.clear();
+                }
+                Some((_, Some(Evaluated::Failed(failed)))) => {
+                    let (here, path, report) = failure(&file, &failed.failure);
+                    self.path = path;
+                    self.report(here, report);
+                    self.path.clear();
+                    readable = false;
+                }
+                Some((system, Some(Evaluated::Value(read)))) => reads.push((system, read)),
+            }
+        }
+
+        let here = Here::File(&file);
+        let mut state = CatalogState {
+            overlay: here.location(),
+            listing: here.location(),
+            names: BTreeSet::new(),
+            reads: Vec::new(),
+            accepted: None,
+        };
+        let mut accepted = None;
+        if let Some((_, first)) = reads.first() {
+            state.overlay = locate(&first.value, here, &[names::OVERRIDES]).location();
+            state.listing = locate(&first.value, here, &[names::PACKAGES]).location();
+            // a catalog whose `packages` isn't an attribute set says nothing of what it holds,
+            // and its own finding says why.
+            match field_at(&first.value, &[names::PACKAGES]) {
+                Some(Node::Attrs { fields }) => {
+                    state.names.extend(fields.keys().map(String::as_str));
+                }
+                Some(_) => readable = false,
+                None => {}
+            }
+            self.overlay = Some(state.overlay.clone());
+            accepted = self.value(&vocabulary::catalog(), &first.value, here);
+        }
+        for (system, read) in &reads {
+            self.packages(read, system, here);
+        }
+        state.reads = reads;
+        if self.findings.len() == start
+            && let Some(value) = accepted
+        {
+            state.accepted = Some(accepted_catalog(value, &entry)?);
+        }
+        Ok(if readable {
+            Cataloged::Read(Box::new(state))
+        } else {
+            Cataloged::Unread
+        })
+    }
+
+    // every catalog entry under `packages` names a package on the system, as the read resolved
+    // it. one that isn't an attribute path at all is already the record's finding.
+    fn packages(&mut self, read: &CatalogRead, system: &str, here: Here<'_>) {
+        let Some(Node::Attrs { fields }) = field_at(&read.value, &[names::PACKAGES]) else {
+            return;
+        };
+        for (name, field) in fields {
+            let Node::String { value: path, .. } = &field.value else {
+                continue;
+            };
+            if is_attribute_path(path) && !read.packages.contains_key(name) {
+                self.path = vec![
+                    Segment::Field(names::PACKAGES.to_owned()),
+                    Segment::Field(name.clone()),
+                ];
+                self.report(
+                    here.within(field),
+                    finding(
+                        Code::UnknownReference,
+                        format!(
+                            "names `{path}`, which is no package in the pinned nixpkgs on {system}"
+                        ),
+                    )
+                    .help(format!(
+                        "name a package nixpkgs builds, or add one through the catalog's `{}`",
+                        names::OVERRIDES
+                    )),
+                );
+                self.path.clear();
+            }
+        }
+    }
+
     fn project(
         &mut self,
         name: Identifier,
@@ -476,7 +820,7 @@ impl<'a> Checker<'a> {
                 if let Some(value) = self.value(record, &declaration.value, Here::File(&file)) {
                     let project = vocabulary::document_value(value, directory);
                     let project = serde_json::from_value(project).map_err(|error| CheckError {
-                        project: name.clone(),
+                        subject: format!("`{name}`"),
                         error,
                     })?;
                     checked.accepted = Some((&declaration.value, project));
@@ -529,6 +873,301 @@ impl<'a> Checker<'a> {
             }
         }
         self.project = None;
+    }
+
+    // every package a project or its toolchains pick, for its path or for a variable, is named
+    // in the catalog. a catalog that can't say what it holds checks nothing. a pick's path is
+    // built only when it isn't found, which most are.
+    fn picks(&mut self, project: &Checked<'a>, catalog: &Cataloged<'_>) {
+        let Some((declaration, declared)) = &project.accepted else {
+            return;
+        };
+        let names = match catalog {
+            Cataloged::Unread => return,
+            Cataloged::Absent => None,
+            Cataloged::Read(state) => Some(state),
+        };
+        let held = |package: &Identifier| {
+            names.is_some_and(|state| state.names.contains(package.as_str()))
+        };
+        let mut missed: Vec<(Vec<Segment>, &Identifier)> = Vec::new();
+        for source in declared.sources(&project.name) {
+            let prefix = source_prefix(&source);
+            for (index, package) in source.packages.iter().enumerate() {
+                if !held(package) {
+                    let mut path = prefix.clone();
+                    path.extend([
+                        Segment::Field(names::PACKAGES.to_owned()),
+                        Segment::Index(index_segment(index)),
+                    ]);
+                    missed.push((path, package));
+                }
+            }
+            for (variable, value) in source.env {
+                if let Some(package) = value.package().filter(|package| !held(package)) {
+                    let mut path = prefix.clone();
+                    path.extend([
+                        Segment::Field(names::ENV.to_owned()),
+                        Segment::Field(variable.to_string()),
+                        Segment::Field(names::PACKAGE.to_owned()),
+                    ]);
+                    missed.push((path, package));
+                }
+            }
+        }
+        self.project = Some(project.name.clone());
+        for (path, package) in missed {
+            let report = match names {
+                Some(state) => finding(
+                    Code::UnknownReference,
+                    format!("names `{package}`, which isn't in the catalog"),
+                )
+                .help(format!(
+                    "add `{package}` to the catalog's `{}`",
+                    names::PACKAGES
+                ))
+                .related(state.listing.clone(), "the catalog's packages are here"),
+                None => finding(
+                    Code::UnknownReference,
+                    format!("names `{package}`, but the repository has no catalog"),
+                )
+                .help(format!(
+                    "declare one in the manifest, `{} = {{ {} = \"...\"; {} = [ ... ]; }};`, and name the package there",
+                    ManifestField::Catalog.name(),
+                    names::DIRECTORY,
+                    names::SYSTEMS,
+                )),
+            };
+            let here = locate_path(declaration, Here::File(&project.file), &path);
+            self.path = path;
+            self.report(here, report);
+        }
+        self.path.clear();
+        self.project = None;
+    }
+
+    // each toolchain a project imports is defined by the project it names. the owner is found by
+    // name and who defines a toolchain from the claims the duplicate rule reads too, so the rule
+    // costs a lookup per import whatever the number of projects.
+    fn imports(
+        &mut self,
+        project: &Checked<'a>,
+        checked: &[Checked<'a>],
+        index: &HashMap<&str, usize>,
+        toolchains: &BTreeMap<&Identifier, Vec<&Identifier>>,
+        directories: &Directories,
+    ) {
+        let Some((declaration, declared)) = &project.accepted else {
+            return;
+        };
+        self.project = Some(project.name.clone());
+        for (toolchain, owner) in &declared.imports {
+            self.path = vec![
+                Segment::Field(names::PROJECT.to_owned()),
+                Segment::Field(names::IMPORTS.to_owned()),
+                Segment::Field(toolchain.to_string()),
+            ];
+            let here = locate_path(declaration, Here::File(&project.file), &self.path);
+            if !directories.contains_key(owner.as_str()) {
+                self.report(
+                    here,
+                    finding(
+                        Code::UnknownReference,
+                        format!("names `{owner}`, which isn't a listed project"),
+                    ),
+                );
+                continue;
+            }
+            // an owner whose declaration has findings of its own, or one the composition doesn't
+            // hold, says nothing of what it defines.
+            let Some(owner_project) = index.get(owner.as_str()).map(|&at| &checked[at]) else {
+                continue;
+            };
+            let Some((owner_declaration, owner_declared)) = &owner_project.accepted else {
+                continue;
+            };
+            if owner_declared.toolchains.contains_key(toolchain) {
+                continue;
+            }
+            let help = match toolchains.get(toolchain).and_then(|owners| owners.first()) {
+                Some(other) => format!(
+                    "`{other}` defines it: `{}.{}.{toolchain} = \"{other}\";`",
+                    names::PROJECT,
+                    names::IMPORTS,
+                ),
+                None => format!(
+                    "define it in `{owner}`'s `{}.{toolchain}`",
+                    names::TOOLCHAINS
+                ),
+            };
+            let at = locate(
+                owner_declaration,
+                Here::File(&owner_project.file),
+                &[names::TOOLCHAINS],
+            );
+            self.report(
+                here,
+                finding(
+                    Code::UnknownReference,
+                    format!("imports `{toolchain}` from `{owner}`, which defines no toolchain `{toolchain}`"),
+                )
+                .help(help)
+                .related(at.location(), format!("`{owner}`'s toolchains are here")),
+            );
+        }
+        self.path.clear();
+        self.project = None;
+    }
+
+    // a shell gets each environment variable from one place. its first definition, in the order
+    // the sources come, keeps it, and each later one is reported against its own declaration;
+    // a definition is located only once it's reported or pointed at.
+    fn environment(&mut self, sources: &[Source<'_, 'a>]) {
+        let mut defined: BTreeMap<&Variable, &Source<'_, 'a>> = BTreeMap::new();
+        for source in sources {
+            for variable in source.shell.env.keys() {
+                let Some(first) = defined.get(variable) else {
+                    defined.insert(variable, source);
+                    continue;
+                };
+                let (path, here) = source.variable(variable);
+                let at = first.variable(variable).1.location();
+                self.project = Some(source.project.name.clone());
+                self.path = path;
+                self.report(
+                    here,
+                    finding(
+                        Code::Duplicate,
+                        format!("is already defined by {}", first.named()),
+                    )
+                    .help("define each variable once: a project and the toolchains it uses share one environment")
+                    .related(at, format!("{} defines it here", first.named())),
+                );
+            }
+        }
+        self.path.clear();
+        self.project = None;
+    }
+
+    // two different packages on one shell's path under one name. the packages each source picks
+    // are walked through what they propagate, breadth first in the order picked, and the first
+    // package to go by a name, whether as its name or as its program, keeps it; a later, different
+    // one is reported against the pick that brought it, pointing at the pick that brought the
+    // first. a package reached again is the same package, so each is visited once per system.
+    fn conflicts(&mut self, sources: &[Source<'_, 'a>], system: &str, read: &'a CatalogRead) {
+        let mut claims: HashMap<&'a str, Claim<'a>> = HashMap::new();
+        let mut seen: HashSet<&'a str> = HashSet::new();
+        let mut reported: HashSet<(&'a str, &'a str)> = HashSet::new();
+        let mut queue: VecDeque<(&'a str, Option<&'a str>)> = VecDeque::new();
+        for (index_of_source, source) in sources.iter().enumerate() {
+            for (index, picked) in source.shell.packages.iter().enumerate() {
+                let Some((picked, root)) = read.packages.get_key_value(picked.as_str()) else {
+                    continue;
+                };
+                queue.push_back((root.as_str(), None));
+                while let Some((name, via)) = queue.pop_front() {
+                    let Some((name, package)) = read.graph.get_key_value(name) else {
+                        continue;
+                    };
+                    if !seen.insert(name.as_str()) {
+                        continue;
+                    }
+                    let called = [
+                        Some(Called::Name(&package.pname)),
+                        package.main_program.as_deref().map(Called::Program),
+                    ];
+                    for called in called.into_iter().flatten() {
+                        let claim = Claim {
+                            called,
+                            package: name,
+                            source: index_of_source,
+                            index,
+                            picked,
+                            via,
+                        };
+                        match claims.entry(called.name()) {
+                            Entry::Vacant(vacant) => {
+                                vacant.insert(claim);
+                            }
+                            Entry::Occupied(first) => {
+                                let first = first.get();
+                                if first.package != name.as_str()
+                                    && reported.insert((first.package, name.as_str()))
+                                {
+                                    self.conflict(sources, system, first, &claim);
+                                }
+                            }
+                        }
+                    }
+                    queue.extend(
+                        package
+                            .propagates
+                            .iter()
+                            .map(|next| (next.as_str(), Some(name.as_str()))),
+                    );
+                }
+            }
+        }
+        self.path.clear();
+        self.project = None;
+    }
+
+    fn conflict(
+        &mut self,
+        sources: &[Source<'_, 'a>],
+        system: &str,
+        first: &Claim<'_>,
+        second: &Claim<'_>,
+    ) {
+        let how = |claim: &Claim<'_>| match claim.via {
+            None => format!("catalog package `{}`", claim.picked),
+            Some(via) => format!(
+                "catalog package `{}` through the propagated inputs of `{via}`",
+                claim.picked
+            ),
+        };
+        let both = match (first.called, second.called) {
+            (Called::Name(name), Called::Name(_)) => format!("two packages named `{name}`"),
+            (Called::Program(program), Called::Program(_)) => {
+                format!("two packages that run as `{program}`")
+            }
+            (Called::Name(name), Called::Program(_)) | (Called::Program(name), Called::Name(_)) => {
+                format!("one package named `{name}` and one that runs as it")
+            }
+        };
+        let at = |claim: &Claim<'_>| {
+            let source = &sources[claim.source];
+            let mut path = source_prefix(&source.shell);
+            path.extend([
+                Segment::Field(names::PACKAGES.to_owned()),
+                Segment::Index(index_segment(claim.index)),
+            ]);
+            let here = locate_path(source.declaration, Here::File(&source.project.file), &path);
+            (path, here)
+        };
+        let first_at = at(first).1.location();
+        let (path, here) = at(second);
+        self.project = Some(sources[second.source].project.name.clone());
+        self.path = path;
+        let report = finding(
+            Code::Conflict,
+            format!(
+                "puts `{}` on the path, from {}, where `{}` from {} already is: {both} on {system}",
+                second.package,
+                how(second),
+                first.package,
+                how(first),
+            ),
+        )
+        .help(format!(
+            "keep one of them on the path: pick packages that agree, or make them agree in the catalog's `{}`",
+            names::OVERRIDES
+        ))
+        .related(
+            first_at,
+            format!("{} puts `{}` on the path here", sources[first.source].named(), first.package),
+        );
+        self.report(here, report);
     }
 
     fn reference(
@@ -656,59 +1295,68 @@ impl<'a> Checker<'a> {
         self.project = None;
     }
 
+    // who claims each name in a shared name space, among the projects the checker accepted, by the
+    // document's one definition of a claim.
+    fn claims<'c>(
+        &self,
+        checked: &'c [Checked<'a>],
+        shared: Shared,
+    ) -> BTreeMap<&'c Identifier, Vec<&'c Identifier>> {
+        let accepted = checked.iter().filter_map(|project| {
+            let (_, declared) = project.accepted.as_ref()?;
+            Some((&project.name, declared))
+        });
+        claims(accepted, move |declared| shared.names(declared))
+    }
+
     // each name in a shared name space has one owner. the first project in name order keeps it,
     // and each other one is reported against its own declaration, pointing at the first.
-    fn duplicates(&mut self, checked: &[Checked<'a>], shared: Shared) {
+    fn duplicates(
+        &mut self,
+        checked: &[Checked<'a>],
+        index: &HashMap<&str, usize>,
+        claims: &BTreeMap<&Identifier, Vec<&Identifier>>,
+        shared: Shared,
+    ) {
         let kind = shared.field();
-        let mut owners: BTreeMap<&str, Vec<(&Checked<'a>, &Node)>> = BTreeMap::new();
-        for project in checked {
-            if let Some((declaration, declared)) = &project.accepted {
-                for entry in shared.names(declared) {
-                    owners
-                        .entry(entry.as_str())
-                        .or_default()
-                        .push((project, *declaration));
-                }
-            }
-        }
-        for (entry, claims) in owners {
-            let Some(((first, first_declaration), others)) = claims.split_first() else {
+        let located = |owner: &Identifier| {
+            let project = &checked[index[owner.as_str()]];
+            let (declaration, _) = project
+                .accepted
+                .as_ref()
+                .expect("a claim is an accepted project's");
+            (project, *declaration)
+        };
+        for (entry, owners) in claims {
+            let Some((first, others)) = owners.split_first() else {
                 continue;
             };
-            let first_here =
-                locate(first_declaration, Here::File(&first.file), &[kind, entry]).location();
-            for (other, declaration) in others {
-                self.project = Some(other.name.clone());
+            let entry = entry.as_str();
+            let (first_project, first_declaration) = located(first);
+            let first_here = locate(
+                first_declaration,
+                Here::File(&first_project.file),
+                &[kind, entry],
+            )
+            .location();
+            for other in others {
+                let (other_project, declaration) = located(other);
+                self.project = Some(other_project.name.clone());
                 self.path = vec![
                     Segment::Field(kind.to_owned()),
                     Segment::Field(entry.to_owned()),
                 ];
-                let here = locate(declaration, Here::File(&other.file), &[kind, entry]);
+                let here = locate(declaration, Here::File(&other_project.file), &[kind, entry]);
                 self.report(
                     here,
-                    finding(
-                        Code::Duplicate,
-                        format!("is already declared by `{}`", first.name),
-                    )
-                    .help("give each one a name of its own")
-                    .related(
-                        first_here.clone(),
-                        format!("`{}` declares it here", first.name),
-                    ),
+                    finding(Code::Duplicate, format!("is already declared by `{first}`"))
+                        .help(shared.help(entry, first))
+                        .related(first_here.clone(), format!("`{first}` declares it here")),
                 );
             }
         }
         self.project = None;
         self.path.clear();
-    }
-
-    fn document(
-        self,
-        focus: Option<Identifier>,
-        directories: &Directories,
-        checked: Vec<Checked<'a>>,
-    ) -> Document {
-        document(self.findings, focus, directories, checked)
     }
 
     fn manifest_entry(&self, name: &str) -> Here<'a> {
@@ -786,20 +1434,26 @@ impl<'a> Checker<'a> {
 
     // a name an attribute set keyed by identifiers may have.
     fn key(&mut self, name: &str, here: Here<'_>) -> bool {
+        self.keyed(Key::Identifier, name, here)
+    }
+
+    // a name an attribute set keyed by `key` may have.
+    fn keyed(&mut self, key: Key, name: &str, here: Here<'_>) -> bool {
         if !self.safe_key(name, here) {
             return false;
         }
-        if Scalar::Identifier.valid(name) {
-            return true;
+        if !key.valid(name) {
+            self.report(
+                here,
+                finding(Code::Invalid, format!("is not {}", key.accepts())),
+            );
+            return false;
         }
-        self.report(
-            here,
-            finding(
-                Code::Invalid,
-                format!("is not {}", Scalar::Identifier.accepts()),
-            ),
-        );
-        false
+        if let Some(why) = key.reserved(name) {
+            self.report(here, finding(Code::Invalid, why));
+            return false;
+        }
+        true
     }
 
     // why text can't reach the document, if it can't. the location is tested before the store
@@ -874,9 +1528,23 @@ impl<'a> Checker<'a> {
                     None
                 }
             }
-            // text that says something, and nothing more: it may name a store path, since the
-            // record leaves it out of what the document carries.
+            // text that says something, and nothing more. it names no store path, since a command
+            // runs what its shell's packages put on the path, and those come from the catalog.
             Type::Command => match node {
+                Node::String { value, context } if *context || contains_store_path(value) => {
+                    self.report(
+                        here,
+                        finding(
+                            Code::StoreReference,
+                            "names a store path, so it runs a package the catalog doesn't hold",
+                        )
+                        .help(format!(
+                            "pick the package under `{}` and run it by name: a command runs what its shell's path holds",
+                            names::PACKAGES
+                        )),
+                    );
+                    None
+                }
                 Node::String { value, .. } if Scalar::Text.valid(value) => Some(Value::Null),
                 Node::String { .. } => {
                     self.report(
@@ -903,14 +1571,72 @@ impl<'a> Checker<'a> {
                 }
                 values.map(Value::Array)
             }
-            Type::Attrs(element) => {
+            Type::Attrs { key, element } => {
                 let fields = self.attribute_set(node, here, "an attribute set")?;
-                self.entries(fields, here, Self::key, |this, field, here| {
-                    this.value(element, &field.value, here)
-                })
+                self.entries(
+                    fields,
+                    here,
+                    |this, name, here| this.keyed(*key, name, here),
+                    |this, field, here| this.value(element, &field.value, here),
+                )
                 .map(Value::Object)
             }
             Type::Record(record) => self.record(record, node, here),
+            Type::Function => match node {
+                Node::Function => Some(Value::Null),
+                other => {
+                    self.wrong_kind(here, "a function, `final: prev: ...`", other);
+                    None
+                }
+            },
+            Type::AttributePath => {
+                let path = self.string(node, here, "an attribute path string")?;
+                if is_attribute_path(path) {
+                    Some(Value::String(path.to_owned()))
+                } else {
+                    self.report(
+                        here,
+                        finding(Code::Invalid, format!("must be {ATTRIBUTE_PATH_ACCEPTS}")),
+                    );
+                    None
+                }
+            }
+            // text, empty included, since an empty variable is a value; or where in a catalog
+            // package the variable points.
+            Type::EnvValue(location) => match node {
+                Node::String { value, context } => match self.text_problem(value, *context) {
+                    None => Some(Value::String(value.clone())),
+                    Some((code, message)) => {
+                        self.report(here, finding(code, message));
+                        None
+                    }
+                },
+                Node::Attrs { .. } => self.record(location, node, here),
+                other => {
+                    self.wrong_kind(here, &ty.describe(), other);
+                    None
+                }
+            },
+            Type::SecondOverlay => {
+                let mut report = finding(
+                    Code::SecondOverlay,
+                    format!(
+                        "is a second overlay: the repository's one overlay is the catalog's `{}`",
+                        names::OVERRIDES
+                    ),
+                )
+                .help(format!(
+                    "move each entry to the catalog's `{}`, with a `{}` and a `{}`",
+                    names::OVERRIDES,
+                    names::REASON,
+                    names::RELEASE
+                ));
+                if let Some(overlay) = &self.overlay {
+                    report = report.related(overlay.clone(), "the one overlay is here");
+                }
+                self.report(here, report);
+                None
+            }
             Type::Schema => self.schema(node, here).map(|_| Value::Null),
         }
     }
@@ -1005,14 +1731,14 @@ impl<'a> Checker<'a> {
         &mut self,
         fields: &'h BTreeMap<String, Field>,
         here: Here<'h>,
-        name: fn(&mut Self, &str, Here<'_>) -> bool,
+        mut name: impl FnMut(&mut Self, &str, Here<'_>) -> bool,
         mut each: impl FnMut(&mut Self, &'h Field, Here<'h>) -> Option<Value>,
     ) -> Option<Map<String, Value>> {
         let mut values = Some(Map::new());
         for (key, field) in fields {
             let here = here.within(field);
             self.path.push(Segment::Field(key.clone()));
-            let value = if name(self, key, here) {
+            let value = if name(&mut *self, key, here) {
                 each(self, field, here)
             } else {
                 None
@@ -1024,11 +1750,48 @@ impl<'a> Checker<'a> {
     }
 }
 
+// the catalog as the document carries it, from its checked value and its manifest entry's. a
+// value the document can't hold means the catalog's record and its type disagree, a defect in
+// Shikumi that comes back as the same error a project's would.
+fn accepted_catalog(value: Value, entry: &Value) -> Result<Catalog, CheckError> {
+    let catalog = vocabulary::document_catalog_value(value, entry);
+    serde_json::from_value(catalog).map_err(|error| CheckError {
+        subject: "the catalog".to_owned(),
+        error,
+    })
+}
+
+// the sources of the composition's shell, as the document's one definition orders them, each
+// with the declaration it's located in.
+fn sources<'c, 'a>(
+    checked: &'c [Checked<'a>],
+    index: &HashMap<&str, usize>,
+    focus: Option<&Identifier>,
+) -> Vec<Source<'c, 'a>> {
+    let accepted = checked.iter().filter_map(|project| {
+        let (_, declared) = project.accepted.as_ref()?;
+        Some((&project.name, declared))
+    });
+    shell(accepted, focus)
+        .into_iter()
+        .filter_map(|shell| {
+            let project = &checked[*index.get(shell.owner.as_str())?];
+            let (declaration, _) = project.accepted.as_ref()?;
+            Some(Source {
+                project,
+                declaration,
+                shell,
+            })
+        })
+        .collect()
+}
+
 fn document(
     findings: Vec<Diagnostic>,
     focus: Option<Identifier>,
     directories: &Directories,
     checked: Vec<Checked<'_>>,
+    catalog: Option<Catalog>,
 ) -> Document {
     let accepted = findings.is_empty();
     // with nothing found, every project was accepted. one that somehow wasn't leaves the document
@@ -1053,6 +1816,7 @@ fn document(
         schema: SchemaName,
         version: Version,
         focus,
+        catalog: catalog.filter(|_| accepted),
         projects,
         remainder,
         diagnostics: findings,
@@ -1190,6 +1954,27 @@ fn locate<'h>(node: &'h Node, mut here: Here<'h>, path: &[&str]) -> Here<'h> {
         node = &field.value;
     }
     here
+}
+
+// the value at a path of attribute names in a serialized value.
+fn field_at<'n>(node: &'n Node, path: &[&str]) -> Option<&'n Node> {
+    path.iter().try_fold(node, |node, name| match node {
+        Node::Attrs { fields } => fields.get(*name).map(|field| &field.value),
+        _ => None,
+    })
+}
+
+// the nearest position along a finding's path, which follows attribute names and stops at a list
+// element, since elements have no position of their own.
+fn locate_path<'h>(node: &'h Node, here: Here<'h>, path: &[Segment]) -> Here<'h> {
+    let names: Vec<&str> = path
+        .iter()
+        .map_while(|segment| match segment {
+            Segment::Field(name) => Some(name.as_str()),
+            Segment::Index(_) => None,
+        })
+        .collect();
+    locate(node, here, &names)
 }
 
 fn index_segment(index: usize) -> u32 {
@@ -1339,15 +2124,25 @@ mod tests {
 
     refusals! {
         refuses_an_extension_schema_outside_the_vocabulary:
-            Invalid, None, "extensions.broken", "shikumi.nix", Some(31);
+            Invalid, None, "extensions.broken", "shikumi.nix", Some(37);
         refuses_an_extension_schema_built_from_an_internal_type:
-            Invalid, None, "extensions.sneaky", "shikumi.nix", Some(35);
+            Invalid, None, "extensions.sneaky", "shikumi.nix", Some(41);
         refuses_an_unknown_manifest_option:
-            UnknownOption, None, "owners", "shikumi.nix", Some(39);
+            UnknownOption, None, "owners", "shikumi.nix", Some(45);
         refuses_a_directory_outside_the_repository:
             Invalid, Some("outside"), "projects.outside", "shikumi.nix", Some(19);
         refuses_a_directory_inside_another_project:
             Overlap, Some("overlap"), "projects.overlap", "shikumi.nix", Some(15);
+        refuses_a_system_nixpkgs_does_not_know:
+            Invalid, None, "catalog.systems[1]", "shikumi.nix", Some(48);
+        refuses_an_overlay_beside_the_catalogs_overrides:
+            SecondOverlay, None, "overlays", "catalog/catalog.nix", Some(24);
+        refuses_an_override_without_what_lets_it_go:
+            Missing, None, "overrides.cowsay.release", "catalog/catalog.nix", Some(19);
+        refuses_an_override_without_why_it_exists:
+            Missing, None, "overrides.hello.reason", "catalog/catalog.nix", Some(15);
+        refuses_a_catalog_entry_that_names_no_package_in_nixpkgs:
+            UnknownReference, None, "packages.missing", "catalog/catalog.nix", Some(7);
         refuses_a_listed_directory_without_a_declaration:
             NoDeclaration, Some("absent"), "projects.absent", "shikumi.nix", Some(18);
         refuses_an_invalid_identifier_in_a_list:
@@ -1380,6 +2175,10 @@ mod tests {
             Missing, Some("missing"), "steps.build.exec", "projects/missing/project.nix", Some(4);
         refuses_a_record_that_skipped_the_factory:
             NotADeclaration, Some("no-factory"), "", "projects/no-factory/project.nix", None;
+        refuses_an_overlay_a_project_declares:
+            SecondOverlay, Some("overlay"), "overrides", "projects/overlay/project.nix", Some(7);
+        refuses_a_variable_the_shell_sets_itself:
+            Invalid, Some("path-variable"), "env.PATH", "projects/path-variable/project.nix", Some(8);
         refuses_a_field_whose_attributes_have_no_position_at_the_nearest_one_that_has:
             Missing, Some("split"), "commands.check.exec", "projects/split/project.nix", Some(8);
         refuses_a_value_from_an_imported_file_in_that_file:
@@ -1402,6 +2201,12 @@ mod tests {
             UnknownReference, Some("dangling"), "project.dependsOn[1]", "projects/dangling/project.nix", Some(6);
         refuses_ordering_after_a_missing_step:
             UnknownReference, Some("dangling"), "steps.test.after[0]", "projects/dangling/project.nix", Some(14);
+        refuses_an_import_of_a_toolchain_its_owner_does_not_define:
+            UnknownReference, Some("jvm-app"), "project.imports.rust", "projects/jvm-app/project.nix", Some(8);
+        refuses_a_package_outside_the_catalog:
+            UnknownReference, Some("picks"), "packages[1]", "projects/picks/project.nix", Some(7);
+        refuses_a_variable_in_a_package_outside_the_catalog:
+            UnknownReference, Some("picks"), "env.TOOL_HOME.package", "projects/picks/project.nix", Some(11);
         refuses_projects_that_depend_on_each_other_in_a_loop:
             Cycle, Some("cycle-a"), "project.dependsOn[1]", "projects/cycle-a/project.nix", Some(6);
         refuses_steps_that_run_after_each_other_in_a_loop:
@@ -1410,6 +2215,208 @@ mod tests {
             Duplicate, Some("duplicate-b"), "commands.fmt", "projects/duplicate-b/project.nix", Some(7);
         refuses_a_service_two_projects_declare:
             Duplicate, Some("duplicate-b"), "services.db", "projects/duplicate-b/project.nix", Some(11);
+        refuses_a_toolchain_two_projects_define:
+            Duplicate, Some("jdk-owner"), "toolchains.jdk", "projects/jdk-owner/project.nix", Some(7);
+        refuses_a_variable_a_shell_gets_from_a_project_and_a_toolchain:
+            Duplicate, Some("jvm-app"), "env.JAVA_HOME", "projects/jvm-app/project.nix", Some(12);
+        refuses_two_jdks_on_one_path_one_of_them_propagated:
+            Conflict, Some("jvm-app"), "packages[0]", "projects/jvm-app/project.nix", Some(11);
+    }
+
+    // what one finding says, as a person reads it, and every file it names.
+    fn named_in(diagnostic: &Diagnostic) -> (String, Vec<String>) {
+        let mut files = vec![diagnostic.location.file.to_string()];
+        files.extend(
+            diagnostic
+                .related
+                .iter()
+                .map(|r| r.location.file.to_string()),
+        );
+        (diagnostic.message.to_string(), files)
+    }
+
+    fn the(document: &Document, code: Code, path: &str) -> Diagnostic {
+        document
+            .diagnostics
+            .iter()
+            .find(|d| d.code == code && ShowPath(&d.path).to_string() == path)
+            .unwrap_or_else(|| panic!("no {code} at {path}: {:#?}", document.diagnostics))
+            .clone()
+    }
+
+    #[test]
+    fn a_conflict_names_both_packages_and_both_files() {
+        let (message, files) = named_in(&the(&broken(), Code::Conflict, "packages[0]"));
+        for named in [
+            "`openjdk-25.",
+            "`openjdk-21.",
+            "`kotlin`",
+            "`jdk`",
+            "`openjdk`",
+            "x86_64-linux",
+        ] {
+            assert!(message.contains(named), "{named} isn't in {message}");
+        }
+        assert_eq!(
+            files,
+            [
+                "projects/jvm-app/project.nix",
+                "projects/jdk-owner/project.nix"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_second_definition_names_both_files() {
+        for (code, path, files) in [
+            (
+                Code::Duplicate,
+                "env.JAVA_HOME",
+                [
+                    "projects/jvm-app/project.nix",
+                    "projects/jdk-owner/project.nix",
+                ],
+            ),
+            (
+                Code::Duplicate,
+                "toolchains.jdk",
+                [
+                    "projects/jdk-owner/project.nix",
+                    "projects/jdk-again/project.nix",
+                ],
+            ),
+            (
+                Code::SecondOverlay,
+                "overrides",
+                ["projects/overlay/project.nix", "catalog/catalog.nix"],
+            ),
+        ] {
+            assert_eq!(named_in(&the(&broken(), code, path)).1, files, "{path}");
+        }
+    }
+
+    // a focused composition's shell holds its project and the toolchains it uses, so what's
+    // refused on that path is refused there too, and what lies on other projects' paths isn't.
+    #[test]
+    fn a_focused_shell_holds_its_project_and_the_toolchains_it_uses() {
+        let mut declarations = fixture(include_str!("../fixtures/broken/declarations.json"));
+        let codes = |declarations: &Declarations, path: &str| -> Vec<Code> {
+            checked(declarations, ROOT)
+                .diagnostics
+                .iter()
+                .filter(|d| {
+                    d.project.as_ref().is_some_and(|p| p.as_str() == "jvm-app")
+                        && ShowPath(&d.path).to_string() == path
+                })
+                .map(|d| d.code)
+                .collect()
+        };
+        declarations.focus = Some("jvm-app".to_owned());
+        assert_eq!(codes(&declarations, "packages[0]"), [Code::Conflict]);
+        assert_eq!(codes(&declarations, "env.JAVA_HOME"), [Code::Duplicate]);
+        // `picks` holds JDK 21 too, but not on `jdk-owner`'s path, which has no Kotlin.
+        declarations.focus = Some("jdk-owner".to_owned());
+        assert!(
+            !checked(&declarations, ROOT)
+                .diagnostics
+                .iter()
+                .any(|d| d.code == Code::Conflict)
+        );
+    }
+
+    #[test]
+    fn a_pick_in_a_repository_without_a_catalog_is_refused() {
+        let mut declarations = fixture(include_str!("../fixtures/broken/declarations.json"));
+        declarations.catalog = None;
+        let Node::Attrs { fields } = manifest_value(&mut declarations) else {
+            panic!()
+        };
+        fields.remove("catalog");
+        let found = the(
+            &checked(&declarations, ROOT),
+            Code::UnknownReference,
+            "packages[1]",
+        );
+        assert!(
+            found
+                .message
+                .as_str()
+                .contains("the repository has no catalog")
+        );
+        assert!(found.help.unwrap().as_str().contains("catalog = {"));
+    }
+
+    // a catalog that couldn't be read says nothing of what it holds, so no pick is checked
+    // against it, and its own failure stands alone.
+    #[test]
+    fn a_catalog_that_failed_checks_no_pick_against_it() {
+        let document = failures();
+        let catalog: Vec<&Diagnostic> = document
+            .diagnostics
+            .iter()
+            .filter(|d| d.location.file.as_str() == "catalog/catalog.nix")
+            .collect();
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].code, Code::Thrown);
+        assert!(
+            !document
+                .diagnostics
+                .iter()
+                .any(|d| d.project.as_ref().is_some_and(|p| p.as_str() == "sound"))
+        );
+    }
+
+    #[test]
+    fn the_accepted_document_carries_the_catalog_toolchains_imports_and_variables() {
+        let basic = checked(
+            &fixture(include_str!("../fixtures/basic/declarations.json")),
+            ROOT,
+        );
+        let catalog = basic.catalog.as_ref().unwrap();
+        let packages: Vec<(&str, &str)> = catalog
+            .packages
+            .iter()
+            .map(|(name, path)| (name.as_str(), path.as_str()))
+            .collect();
+        assert_eq!(
+            packages,
+            [
+                ("jdk", "jdk21"),
+                ("kotlin", "kotlin"),
+                ("mdbook", "mdbook"),
+                ("nodejs", "nodejs")
+            ]
+        );
+        assert!(
+            catalog
+                .overrides
+                .keys()
+                .any(|name| name.as_str() == "kotlin")
+        );
+        let projects = basic.projects.as_ref().unwrap();
+        let web = &projects[&Identifier::new("web").unwrap()];
+        assert_eq!(web.imports.values().next().unwrap().as_str(), "core");
+        let core = &projects[&Identifier::new("core").unwrap()];
+        assert!(
+            core.toolchains[&Identifier::new("jdk").unwrap()]
+                .env
+                .values()
+                .all(|value| value.package().is_some())
+        );
+    }
+
+    // the record and the document's type disagreeing is Shikumi's defect, reported as an error the
+    // caller can show rather than a panic, for the catalog as for a project.
+    #[test]
+    fn a_catalog_the_document_cant_hold_is_an_error_not_a_panic() {
+        let entry = json!({"directory": "catalog", "systems": ["x86_64-linux"]});
+        let error = accepted_catalog(json!({"packages": 3, "overrides": {}}), &entry).unwrap_err();
+        assert!(
+            error.to_string().contains("the catalog in a shape"),
+            "{error}"
+        );
+        let held = accepted_catalog(json!({"packages": {}, "overrides": {}}), &entry).unwrap();
+        assert_eq!(held.packages.len(), 0);
     }
 
     #[test]
@@ -1643,6 +2650,7 @@ mod tests {
             "version": {"major": 1, "minor": 0},
             "focus": focus,
             "manifest": {"file": "shikumi.nix", "value": node(json!({"projects": {"app": "app"}}))},
+            "catalog": null,
             "projects": {"app": {"factory": true, "value": declaration}}
         }))
         .unwrap()
@@ -1795,20 +2803,94 @@ mod tests {
 
     // a command line never reaches the document, so the checks that keep text out of it don't
     // apply: it may run a program from the store.
+    // a command runs what its shell's packages put on the path, and those come from the catalog,
+    // so a command line that names a store path runs a package the catalog doesn't hold, whether
+    // the path still carries its context or was written as text.
     #[test]
-    fn a_command_line_may_name_a_store_path() {
-        let mut declaration = node(sound());
-        declaration["fields"]["commands"] = json!({"at": null, "value": node(json!({
-            "run": {"description": "Run it"}
-        }))});
-        declaration["fields"]["commands"]["value"]["fields"]["run"]["value"]["fields"]["exec"] = json!({
-            "at": null,
-            "value": {"kind": "string", "value": "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x/bin/x", "context": true}
-        });
-        let document = checked(&repository(declaration, None), ROOT);
+    fn a_command_line_that_names_a_store_path_is_refused_and_one_that_runs_by_name_is_kept_out() {
+        let with = |exec: Value| {
+            let mut declaration = node(sound());
+            declaration["fields"]["commands"] = json!({"at": null, "value": node(json!({
+                "run": {"description": "Run it"}
+            }))});
+            declaration["fields"]["commands"]["value"]["fields"]["run"]["value"]["fields"]["exec"] =
+                json!({"at": null, "value": exec});
+            checked(&repository(declaration, None), ROOT)
+        };
+        let store = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x/bin/x";
+        for context in [true, false] {
+            let document = with(json!({"kind": "string", "value": store, "context": context}));
+            let codes: Vec<(Code, String)> = document
+                .diagnostics
+                .iter()
+                .map(|d| (d.code, ShowPath(&d.path).to_string()))
+                .collect();
+            assert_eq!(
+                codes,
+                [(Code::StoreReference, "commands.run.exec".to_owned())],
+                "context {context}"
+            );
+        }
+        let document = with(json!({"kind": "string", "value": "x --all", "context": false}));
         assert_eq!(document.diagnostics, []);
         let app = &document.projects.unwrap()[&Identifier::new("app").unwrap()];
         assert_eq!(app.commands.len(), 1);
+    }
+
+    // a package named `java` and a package that runs as `java` both put `java` on the path.
+    #[test]
+    fn a_package_named_as_another_runs_is_a_conflict() {
+        let mut declarations = fixture(include_str!("../fixtures/broken/declarations.json"));
+        let catalog = declarations.catalog.as_mut().unwrap();
+        let Some(Some(Evaluated::Value(read))) = catalog.systems.get_mut("x86_64-linux") else {
+            panic!("the broken fixture's catalog reads on x86_64-linux")
+        };
+        let jdk25 = read
+            .graph
+            .iter_mut()
+            .find(|(name, _)| name.starts_with("openjdk-25"))
+            .map(|(_, package)| package)
+            .unwrap();
+        jdk25.pname = "java".to_owned();
+        jdk25.main_program = None;
+        let found = the(&checked(&declarations, ROOT), Code::Conflict, "packages[0]");
+        assert!(
+            found
+                .message
+                .as_str()
+                .contains("one package named `java` and one that runs as it"),
+            "{}",
+            found.message
+        );
+    }
+
+    // a clash between a project and a toolchain it uses lands on the project, which brought it,
+    // whatever the two are called: here the importer is renamed to sort before the owner.
+    #[test]
+    fn a_clash_with_a_toolchain_is_reported_at_the_project_whatever_the_names() {
+        let mut declarations = fixture(include_str!("../fixtures/broken/declarations.json"));
+        let app = declarations.projects.remove("jvm-app").unwrap();
+        declarations.projects.insert("aa-app".to_owned(), app);
+        let Node::Attrs { fields } = manifest_value(&mut declarations) else {
+            panic!("the broken fixture's manifest is an attribute set")
+        };
+        let Node::Attrs { fields: listed } = &mut fields.get_mut("projects").unwrap().value else {
+            panic!("the broken fixture lists its projects")
+        };
+        let entry = listed.remove("jvm-app").unwrap();
+        listed.insert("aa-app".to_owned(), entry);
+        let document = checked(&declarations, ROOT);
+        for (code, path) in [
+            (Code::Conflict, "packages[0]"),
+            (Code::Duplicate, "env.JAVA_HOME"),
+        ] {
+            let found = the(&document, code, path);
+            assert_eq!(
+                found.project.as_ref().map(Identifier::as_str),
+                Some("aa-app")
+            );
+            assert_eq!(found.location.file.as_str(), "projects/jvm-app/project.nix");
+        }
     }
 
     #[test]

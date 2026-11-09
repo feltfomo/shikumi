@@ -1,11 +1,13 @@
 //! what the declaration layer's Nix and the registry's Rust both have to name: the files the layer
-//! reads in a repository, what each is called with, and the frames the layer puts in an evaluator's
-//! trace for `failure.rs` to read. this is the one definition of each. `fixtures/layer.json` is this
+//! reads in a repository, what each is called with, the fields it reads by name, and the frames the
+//! layer puts in an evaluator's trace for `failure.rs` to read. this is the one definition of each. `fixtures/layer.json` is this
 //! table written out, which a test holds to it, and the layer reads the same file beside its own Nix,
 //! `nix/declarations/layer.json`, which the `declarations` check holds to this one. the checker's
 //! messages and the reference page read the table from here.
 
 use serde::Serialize;
+
+use crate::vocabulary::{ManifestField, names};
 
 /// a file the layer reads in a repository: its name, and the arguments it's called with when it's
 /// a function, which it takes by name.
@@ -25,6 +27,38 @@ pub const MANIFEST: LayerFile = LayerFile {
 pub const DECLARATION: LayerFile = LayerFile {
     name: "project.nix",
     arguments: &["lib", "shikumi"],
+};
+
+/// the catalog, in the directory the manifest names for it.
+pub const CATALOG: LayerFile = LayerFile {
+    name: "catalog.nix",
+    arguments: &["lib"],
+};
+
+/// the fields the layer's Nix reads by name to know which files to read and how: the manifest's
+/// projects and catalog, the catalog entry's directory and systems, and the catalog's packages and
+/// overrides, with each override's build. the names are the vocabulary's; nix-unit holds the Nix
+/// that reads them to this table.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reads {
+    pub projects: &'static str,
+    pub catalog: &'static str,
+    pub directory: &'static str,
+    pub systems: &'static str,
+    pub packages: &'static str,
+    pub overrides: &'static str,
+    pub package: &'static str,
+}
+
+pub const READS: Reads = Reads {
+    projects: ManifestField::Projects.name(),
+    catalog: ManifestField::Catalog.name(),
+    directory: names::DIRECTORY,
+    systems: names::SYSTEMS,
+    packages: names::PACKAGES,
+    overrides: names::OVERRIDES,
+    package: names::PACKAGE,
 };
 
 /// the frames the layer puts in an evaluator's trace, each a fixed text followed, for the project
@@ -71,6 +105,8 @@ impl LayerFile {
 struct Written {
     manifest: LayerFile,
     declaration: LayerFile,
+    catalog: LayerFile,
+    reads: Reads,
     frames: Frames,
 }
 
@@ -79,6 +115,8 @@ pub fn json() -> String {
     crate::contract::render_json(&Written {
         manifest: MANIFEST,
         declaration: DECLARATION,
+        catalog: CATALOG,
+        reads: READS,
         frames: FRAMES,
     })
 }
