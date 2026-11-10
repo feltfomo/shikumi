@@ -1,0 +1,72 @@
+{
+  "manifest": {
+    "name": "shikumi.nix",
+    "arguments": [
+      "lib",
+      "types"
+    ]
+  },
+  "declaration": {
+    "name": "project.nix",
+    "arguments": [
+      "lib",
+      "shikumi"
+    ]
+  },
+  "catalog": {
+    "name": "catalog.nix",
+    "arguments": [
+      "lib"
+    ]
+  },
+  "reads": {
+    "projects": "projects",
+    "catalog": "catalog",
+    "directory": "directory",
+    "systems": "systems",
+    "packages": "packages",
+    "overrides": "overrides",
+    "package": "package"
+  },
+  "frames": {
+    "value": "shikumi-value",
+    "project": "shikumi-project",
+    "field": "shikumi-field",
+    "forcedFile": "forced.nix"
+  },
+  "storeNames": {
+    "keyed": "shikumi-keyed",
+    "layer": "shikumi-layer",
+    "rootMarker": ".shikumi-root.nix"
+  },
+  "withheld": [
+    {
+      "name": "getFlake",
+      "global": false
+    },
+    {
+      "name": "fetchTree",
+      "global": true
+    },
+    {
+      "name": "fetchGit",
+      "global": true
+    },
+    {
+      "name": "fetchTarball",
+      "global": true
+    },
+    {
+      "name": "fetchurl",
+      "global": false
+    },
+    {
+      "name": "fetchMercurial",
+      "global": true
+    },
+    {
+      "name": "fetchClosure",
+      "global": false
+    }
+  ]
+}

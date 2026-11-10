@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shikumi.lock entry",
+  "description": "one line of the lock: an artifact of one ecosystem, tagged with the ecosystem's name. each\nvariant's tag is `Ecosystem`'s name for the variant `ecosystem` maps it to, which a test holds.",
+  "oneOf": [
+    {
+      "description": "a toolchain source, fetched from `url` and unpacked, whose tree has the NAR hash `narHash`.",
+      "type": "object",
+      "properties": {
+        "ecosystem": {
+          "type": "string",
+          "const": "toolchain"
+        },
+        "name": {
+          "$ref": "#/$defs/ToolchainSource"
+        },
+        "narHash": {
+          "$ref": "#/$defs/NarHash"
+        },
+        "url": {
+          "$ref": "#/$defs/Url"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ecosystem",
+        "name",
+        "url",
+        "narHash"
+      ]
+    }
+  ],
+  "$defs": {
+    "NarHash": {
+      "type": "string",
+      "pattern": "^sha256-[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$"
+    },
+    "ToolchainSource": {
+      "description": "a source tree Shikumi's own Nix needs.",
+      "type": "string",
+      "enum": [
+        "nixpkgs",
+        "nix-unit"
+      ]
+    },
+    "Url": {
+      "type": "string",
+      "pattern": "^(https?|file)://\\S+$"
+    }
+  }
+}

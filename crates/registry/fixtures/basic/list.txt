@@ -1,0 +1,3 @@
+core  libs/core  The shared core library
+docs  docs  The documentation site
+web  apps/web  The web front end

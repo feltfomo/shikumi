@@ -1,0 +1,710 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shikumi.declarations",
+  "description": "the manifest and the declarations of every project the composition holds, as the declaration\nlayer serialized them.",
+  "type": "object",
+  "properties": {
+    "catalog": {
+      "description": "the catalog the manifest declares, or null where it declares none.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Catalog"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "focus": {
+      "description": "the project the composition was asked to focus on, as given, or null for the global one.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "manifest": {
+      "$ref": "#/$defs/Evaluated"
+    },
+    "projects": {
+      "description": "every composed project by its manifest name; null where the manifest's entry names no\ndeclaration file.",
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Evaluated3"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "schema": {
+      "$ref": "#/$defs/DeclarationsName"
+    },
+    "version": {
+      "$ref": "#/$defs/DeclarationsVersion"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "catalog",
+    "focus",
+    "manifest",
+    "projects",
+    "schema",
+    "version"
+  ],
+  "$defs": {
+    "At": {
+      "description": "an attribute's source position.",
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "file": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "column"
+      ]
+    },
+    "Catalog": {
+      "description": "the catalog, read once for each system the manifest names.",
+      "type": "object",
+      "properties": {
+        "file": {
+          "description": "the catalog's file, or null where the directory the manifest names holds none; then no\nsystem is read.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "systems": {
+          "description": "each system the manifest names as text, and the catalog read for it, or null for a system\nthe pinned nixpkgs doesn't know.",
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Evaluated2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "systems"
+      ]
+    },
+    "CatalogRead": {
+      "description": "the catalog as one system's package set gives it.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "description": "every package reachable from those through propagation, by `name`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Package"
+          }
+        },
+        "packages": {
+          "description": "each entry of `packages` that is a package, by catalog name, as the package's `name`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "value": {
+          "description": "the catalog file's value, serialized like a declaration: its packages are derivations, and\nits overlay's builds functions.",
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "packages",
+        "graph"
+      ]
+    },
+    "Declaration": {
+      "type": "object",
+      "properties": {
+        "factory": {
+          "description": "whether the file returned a `shikumi.project` result; when it didn't, `value` is what it\nreturned instead.",
+          "type": "boolean"
+        },
+        "value": {
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "factory",
+        "value"
+      ]
+    },
+    "DeclarationsName": {
+      "const": "shikumi.declarations"
+    },
+    "DeclarationsVersion": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ]
+    },
+    "Evaluated": {
+      "description": "a value the layer serialized, or the failure that stopped its evaluation.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Manifest"
+        },
+        {
+          "$ref": "#/$defs/Failed"
+        }
+      ]
+    },
+    "Evaluated2": {
+      "description": "a value the layer serialized, or the failure that stopped its evaluation.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CatalogRead"
+        },
+        {
+          "$ref": "#/$defs/Failed"
+        }
+      ]
+    },
+    "Evaluated3": {
+      "description": "a value the layer serialized, or the failure that stopped its evaluation.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Declaration"
+        },
+        {
+          "$ref": "#/$defs/Failed"
+        }
+      ]
+    },
+    "Failed": {
+      "type": "object",
+      "properties": {
+        "failure": {
+          "$ref": "#/$defs/Failure"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "failure"
+      ]
+    },
+    "Failure": {
+      "description": "why evaluating a declaration or the manifest stopped, as Shikumi read it from the evaluator's\nerror: what kind of failure it was, and which of the trace's frames lie in the repository's\nfiles and which in Shikumi's own Nix. frames anywhere else, such as in nixpkgs' `lib`, are\nneither the user's nor Shikumi's to fix, and are left out.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/FailureKind"
+        },
+        "message": {
+          "description": "what the evaluator said, with the repository's location taken out of it. for a thrown\nerror, it's the text that was thrown; for an undefined variable, the variable's name.",
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "message",
+        "origin"
+      ]
+    },
+    "FailureKind": {
+      "description": "what stopped an evaluation, as far as Shikumi can tell from the evaluator's error.",
+      "type": "string",
+      "enum": [
+        "syntax",
+        "undefined-variable",
+        "type",
+        "thrown",
+        "assertion",
+        "invalid-utf8",
+        "not-keyed",
+        "impure",
+        "location",
+        "unrecognized",
+        "crashed"
+      ]
+    },
+    "Field": {
+      "description": "an attribute's value and where it was defined, or null where the evaluator gives no position\ninside the repository.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "value"
+      ]
+    },
+    "FieldAt": {
+      "description": "a field's path inside a declaration and the nearest source position on it.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "path"
+      ]
+    },
+    "InternalFrame": {
+      "description": "a frame in Shikumi's own Nix: a file of the declaration layer, relative to the layer, and the\nposition in it.",
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "column"
+      ]
+    },
+    "Manifest": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "value": {
+          "$ref": "#/$defs/Node"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "value"
+      ]
+    },
+    "Node": {
+      "description": "one Nix value, tagged with what kind of value it was.",
+      "oneOf": [
+        {
+          "description": "a string's text, and whether it carried a store reference the text may not show.",
+          "type": "object",
+          "properties": {
+            "context": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "const": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value",
+            "context"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "int"
+            },
+            "value": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "float"
+            },
+            "value": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "null"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "a path value, relative to the repository root, or null when it lies outside it.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "path"
+            },
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Node"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "list"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "items"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "fields": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Field"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "attrs"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fields"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "function"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "a derivation or anything else with an `outPath`, which stands for a store path.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "derivation"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "infinity or NaN, which JSON can't write.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "non-finite"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "a value with more values in it, or deeper nesting, than serialization walks, as one that\nrefers to itself has, with the limits the serializer held it to.",
+          "type": "object",
+          "properties": {
+            "depth": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "too-large"
+            },
+            "values": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "values",
+            "depth"
+          ]
+        }
+      ]
+    },
+    "Origin": {
+      "description": "whose the failure is to fix.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "user": {
+              "$ref": "#/$defs/UserOrigin"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "user"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "shikumi": {
+              "$ref": "#/$defs/ShikumiOrigin"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "shikumi"
+          ]
+        }
+      ]
+    },
+    "Package": {
+      "description": "what evaluation can see of a package without building it: what it's called, the program it\nruns as, and the packages it propagates into whatever depends on it, by `name`.",
+      "type": "object",
+      "properties": {
+        "mainProgram": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pname": {
+          "type": "string"
+        },
+        "propagates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mainProgram",
+        "pname",
+        "propagates",
+        "version"
+      ]
+    },
+    "RelativePath": {
+      "description": "a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part",
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$"
+    },
+    "Segment": {
+      "description": "one step of a field's path: an attribute name, or a list element's index.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      ]
+    },
+    "ShikumiOrigin": {
+      "description": "a bug in Shikumi, whose Nix never fails on user input.",
+      "type": "object",
+      "properties": {
+        "frames": {
+          "description": "the frames in Shikumi's own Nix, innermost first, for the report.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InternalFrame"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "frames"
+      ]
+    },
+    "UserOrigin": {
+      "description": "a failure that passed through the repository's files, or one in a value the user wrote.",
+      "type": "object",
+      "properties": {
+        "field": {
+          "description": "the field holding text that isn't valid UTF-8, where the evaluator could be made to say.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FieldAt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "frames": {
+          "description": "the frames in the repository's files, innermost first: where the failure happened in the\nuser's code, then what led there. empty where the evaluator gives no position there.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/At"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "frames"
+      ]
+    }
+  }
+}

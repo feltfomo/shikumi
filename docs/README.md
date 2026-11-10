@@ -20,6 +20,8 @@ working.
 
 - [Shikumi capabilities](reference/capabilities.md): Shikumi is a build system and project registry
   for multi-language repositories, with the Nix store as its cache.
+- [Declarations reference](reference/declarations.md): What a project's declaration and the
+  repository's manifest may contain, and the finding codes the checker reports.
 - [Nix style](reference/nix-style.md): How Nix in this repository is designed: values before syntax,
   kernels and stages, laziness, the module system, layout and list order.
 - [Rust style](reference/rust-style.md): How Rust in this repository is written: the lints the gate

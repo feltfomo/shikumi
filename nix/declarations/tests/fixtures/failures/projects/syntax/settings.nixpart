@@ -1,0 +1,6 @@
+# Nix with a missing semicolon, tracked as `.nixpart` so the gate's formatter and linter, which
+# can't parse it, leave it alone. every repository the checks make holds it as `settings.nix`.
+{
+  summary = "A missing semicolon"
+  maintainers = [ "someone" ];
+}

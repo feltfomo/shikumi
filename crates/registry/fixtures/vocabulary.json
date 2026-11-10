@@ -1,0 +1,80 @@
+{
+  "names": [
+    "attrsOf",
+    "enum",
+    "glob",
+    "identifier",
+    "json",
+    "listOf",
+    "nonEmptyListOf",
+    "optional",
+    "path",
+    "record",
+    "required",
+    "text"
+  ],
+  "schema": {
+    "_tag": "record",
+    "fields": {
+      "everything": {
+        "required": true,
+        "type": {
+          "_tag": "list",
+          "element": {
+            "_tag": "attrs",
+            "element": {
+              "_tag": "enum",
+              "values": [
+                "a",
+                "b"
+              ]
+            }
+          },
+          "nonEmpty": true
+        }
+      },
+      "scalars": {
+        "required": false,
+        "type": {
+          "_tag": "list",
+          "element": {
+            "_tag": "record",
+            "fields": {
+              "glob": {
+                "required": false,
+                "type": {
+                  "_tag": "glob"
+                }
+              },
+              "identifier": {
+                "required": false,
+                "type": {
+                  "_tag": "identifier"
+                }
+              },
+              "json": {
+                "required": false,
+                "type": {
+                  "_tag": "json"
+                }
+              },
+              "path": {
+                "required": false,
+                "type": {
+                  "_tag": "path"
+                }
+              },
+              "text": {
+                "required": false,
+                "type": {
+                  "_tag": "text"
+                }
+              }
+            }
+          },
+          "nonEmpty": false
+        }
+      }
+    }
+  }
+}

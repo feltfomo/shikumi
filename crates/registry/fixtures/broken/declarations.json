@@ -1,0 +1,3526 @@
+{
+  "schema": "shikumi.declarations",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "focus": null,
+  "manifest": {
+    "file": "shikumi.nix",
+    "value": {
+      "kind": "attrs",
+      "fields": {
+        "catalog": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 46,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "directory": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 47,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "catalog",
+                  "context": false
+                }
+              },
+              "systems": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 48,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "list",
+                  "items": [
+                    {
+                      "kind": "string",
+                      "value": "x86_64-linux",
+                      "context": false
+                    },
+                    {
+                      "kind": "string",
+                      "value": "x86_64-nowhere",
+                      "context": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "extensions": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 33,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "broken": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 37,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "not a schema",
+                  "context": false
+                }
+              },
+              "layout": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 36,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "attrs",
+                  "fields": {
+                    "_tag": {
+                      "at": null,
+                      "value": {
+                        "kind": "string",
+                        "value": "record",
+                        "context": false
+                      }
+                    },
+                    "fields": {
+                      "at": null,
+                      "value": {
+                        "kind": "attrs",
+                        "fields": {
+                          "pages": {
+                            "at": {
+                              "file": "shikumi.nix",
+                              "line": 36,
+                              "column": 29
+                            },
+                            "value": {
+                              "kind": "attrs",
+                              "fields": {
+                                "required": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "bool",
+                                    "value": true
+                                  }
+                                },
+                                "type": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "attrs",
+                                    "fields": {
+                                      "_tag": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "string",
+                                          "value": "list",
+                                          "context": false
+                                        }
+                                      },
+                                      "element": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "attrs",
+                                          "fields": {
+                                            "_tag": {
+                                              "at": null,
+                                              "value": {
+                                                "kind": "string",
+                                                "value": "glob",
+                                                "context": false
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "nonEmpty": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "bool",
+                                          "value": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "meta": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 35,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "attrs",
+                  "fields": {
+                    "_tag": {
+                      "at": null,
+                      "value": {
+                        "kind": "string",
+                        "value": "json",
+                        "context": false
+                      }
+                    }
+                  }
+                }
+              },
+              "sneaky": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 41,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "attrs",
+                  "fields": {
+                    "_tag": {
+                      "at": {
+                        "file": "shikumi.nix",
+                        "line": 42,
+                        "column": 7
+                      },
+                      "value": {
+                        "kind": "string",
+                        "value": "command",
+                        "context": false
+                      }
+                    }
+                  }
+                }
+              },
+              "team": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 34,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "attrs",
+                  "fields": {
+                    "_tag": {
+                      "at": null,
+                      "value": {
+                        "kind": "string",
+                        "value": "record",
+                        "context": false
+                      }
+                    },
+                    "fields": {
+                      "at": null,
+                      "value": {
+                        "kind": "attrs",
+                        "fields": {
+                          "owner": {
+                            "at": {
+                              "file": "shikumi.nix",
+                              "line": 34,
+                              "column": 27
+                            },
+                            "value": {
+                              "kind": "attrs",
+                              "fields": {
+                                "required": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "bool",
+                                    "value": true
+                                  }
+                                },
+                                "type": {
+                                  "at": null,
+                                  "value": {
+                                    "kind": "attrs",
+                                    "fields": {
+                                      "_tag": {
+                                        "at": null,
+                                        "value": {
+                                          "kind": "string",
+                                          "value": "identifier",
+                                          "context": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "owners": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 45,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {}
+          }
+        },
+        "projects": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 3,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "absent": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 18,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/absent",
+                  "context": false
+                }
+              },
+              "bad-names": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 9,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/bad-names",
+                  "context": false
+                }
+              },
+              "closed-enum": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 7,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/closed-enum",
+                  "context": false
+                }
+              },
+              "cycle-a": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 23,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/cycle-a",
+                  "context": false
+                }
+              },
+              "cycle-b": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 24,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/cycle-b",
+                  "context": false
+                }
+              },
+              "cycle-steps": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 25,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/cycle-steps",
+                  "context": false
+                }
+              },
+              "dangling": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 14,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/dangling",
+                  "context": false
+                }
+              },
+              "duplicate-a": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 16,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/duplicate-a",
+                  "context": false
+                }
+              },
+              "duplicate-b": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 17,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/duplicate-b",
+                  "context": false
+                }
+              },
+              "empty-list": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 10,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/empty-list",
+                  "context": false
+                }
+              },
+              "extensions": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 20,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/extensions",
+                  "context": false
+                }
+              },
+              "jdk-again": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 28,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/jdk-again",
+                  "context": false
+                }
+              },
+              "jdk-owner": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 27,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/jdk-owner",
+                  "context": false
+                }
+              },
+              "jvm-app": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 29,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/jvm-app",
+                  "context": false
+                }
+              },
+              "laundered": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 13,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/laundered",
+                  "context": false
+                }
+              },
+              "location": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 12,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/location",
+                  "context": false
+                }
+              },
+              "missing": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 5,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/missing",
+                  "context": false
+                }
+              },
+              "no-factory": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 21,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/no-factory",
+                  "context": false
+                }
+              },
+              "outside": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 19,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "../outside",
+                  "context": false
+                }
+              },
+              "overlap": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 15,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/dangling/inner",
+                  "context": false
+                }
+              },
+              "overlay": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 30,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/overlay",
+                  "context": false
+                }
+              },
+              "path-variable": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 31,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/path-variable",
+                  "context": false
+                }
+              },
+              "picks": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 26,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/picks",
+                  "context": false
+                }
+              },
+              "sound": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 4,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/sound",
+                  "context": false
+                }
+              },
+              "split": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 22,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/split",
+                  "context": false
+                }
+              },
+              "store-reference": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 11,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/store-reference",
+                  "context": false
+                }
+              },
+              "unknown-options": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 8,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/unknown-options",
+                  "context": false
+                }
+              },
+              "wrong-type": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 6,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/wrong-type",
+                  "context": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "catalog": {
+    "file": "catalog/catalog.nix",
+    "systems": {
+      "x86_64-linux": {
+        "value": {
+          "kind": "attrs",
+          "fields": {
+            "overlays": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 24,
+                "column": 3
+              },
+              "value": {
+                "kind": "list",
+                "items": [
+                  {
+                    "kind": "function"
+                  }
+                ]
+              }
+            },
+            "overrides": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 9,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "cowsay": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 19,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 21,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "reason": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 20,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "a newer cowsay",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "hello": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 15,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 17,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "release": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 16,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "never",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 10,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "attrs",
+                      "fields": {
+                        "package": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 13,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "function"
+                          }
+                        },
+                        "reason": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 11,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "a Kotlin built on JDK 25",
+                            "context": false
+                          }
+                        },
+                        "release": {
+                          "at": {
+                            "file": "catalog/catalog.nix",
+                            "line": 12,
+                            "column": 7
+                          },
+                          "value": {
+                            "kind": "string",
+                            "value": "the repository moves to JDK 25",
+                            "context": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "packages": {
+              "at": {
+                "file": "catalog/catalog.nix",
+                "line": 2,
+                "column": 3
+              },
+              "value": {
+                "kind": "attrs",
+                "fields": {
+                  "jdk": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 3,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "jdk21",
+                      "context": false
+                    }
+                  },
+                  "kotlin": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 5,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "kotlin",
+                      "context": false
+                    }
+                  },
+                  "missing": {
+                    "at": {
+                      "file": "catalog/catalog.nix",
+                      "line": 7,
+                      "column": 5
+                    },
+                    "value": {
+                      "kind": "string",
+                      "value": "no-such-package",
+                      "context": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "packages": {
+          "jdk": "openjdk-21.0.12.1+1",
+          "kotlin": "kotlin-2.4.21"
+        },
+        "graph": {
+          "kotlin-2.4.21": {
+            "pname": "kotlin",
+            "version": "2.4.21",
+            "mainProgram": null,
+            "propagates": [
+              "openjdk-25.0.5.0.3+1"
+            ]
+          },
+          "openjdk-21.0.12.1+1": {
+            "pname": "openjdk",
+            "version": "21.0.12.1+1",
+            "mainProgram": "java",
+            "propagates": [
+              "set-java-classpath-hook"
+            ]
+          },
+          "openjdk-25.0.5.0.3+1": {
+            "pname": "openjdk",
+            "version": "25.0.5.0.3+1",
+            "mainProgram": "java",
+            "propagates": [
+              "set-java-classpath-hook"
+            ]
+          },
+          "set-java-classpath-hook": {
+            "pname": "set-java-classpath-hook",
+            "version": "26.05pre-git",
+            "mainProgram": null,
+            "propagates": []
+          }
+        }
+      },
+      "x86_64-nowhere": null
+    }
+  },
+  "projects": {
+    "absent": null,
+    "bad-names": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/bad-names/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "dependsOn": {
+                  "at": {
+                    "file": "projects/bad-names/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "Not Valid",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "projects/bad-names/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/bad-names/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Names that aren't identifiers",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "projects/bad-names/project.nix",
+              "line": 8,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "Build": {
+                  "at": {
+                    "file": "projects/bad-names/project.nix",
+                    "line": 8,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/bad-names/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Build",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/bad-names/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "build",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "closed-enum": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/closed-enum/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/closed-enum/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/closed-enum/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Restarts on a policy that doesn't exist",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "services": {
+            "at": {
+              "file": "projects/closed-enum/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "worker": {
+                  "at": {
+                    "file": "projects/closed-enum/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/closed-enum/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "A worker",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/closed-enum/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "worker",
+                          "context": false
+                        }
+                      },
+                      "restart": {
+                        "at": {
+                          "file": "projects/closed-enum/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "sometimes",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cycle-a": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/cycle-a/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "dependsOn": {
+                  "at": {
+                    "file": "projects/cycle-a/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "sound",
+                        "context": false
+                      },
+                      {
+                        "kind": "string",
+                        "value": "cycle-b",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "projects/cycle-a/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/cycle-a/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Depends on a project that depends on it",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cycle-b": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/cycle-b/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "dependsOn": {
+                  "at": {
+                    "file": "projects/cycle-b/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "cycle-a",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "projects/cycle-b/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/cycle-b/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Depends back on the project that depends on it",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cycle-steps": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/cycle-steps/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/cycle-steps/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/cycle-steps/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Orders its steps in a loop",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "projects/cycle-steps/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "build": {
+                  "at": {
+                    "file": "projects/cycle-steps/project.nix",
+                    "line": 8,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "after": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 11,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "test",
+                              "context": false
+                            }
+                          ]
+                        }
+                      },
+                      "description": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 9,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Build",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 10,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "build",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                },
+                "lint": {
+                  "at": {
+                    "file": "projects/cycle-steps/project.nix",
+                    "line": 18,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 19,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Lint",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 20,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "lint",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                },
+                "test": {
+                  "at": {
+                    "file": "projects/cycle-steps/project.nix",
+                    "line": 13,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "after": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 16,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "build",
+                              "context": false
+                            }
+                          ]
+                        }
+                      },
+                      "description": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 14,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Test",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/cycle-steps/project.nix",
+                          "line": 15,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "test",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "dangling": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/dangling/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "dependsOn": {
+                  "at": {
+                    "file": "projects/dangling/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "sound",
+                        "context": false
+                      },
+                      {
+                        "kind": "string",
+                        "value": "nowhere",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "projects/dangling/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/dangling/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Names things that don't exist",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "projects/dangling/project.nix",
+              "line": 11,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "test": {
+                  "at": {
+                    "file": "projects/dangling/project.nix",
+                    "line": 11,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "after": {
+                        "at": {
+                          "file": "projects/dangling/project.nix",
+                          "line": 14,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "build",
+                              "context": false
+                            }
+                          ]
+                        }
+                      },
+                      "description": {
+                        "at": {
+                          "file": "projects/dangling/project.nix",
+                          "line": 12,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Test",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/dangling/project.nix",
+                          "line": 13,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "test",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "duplicate-a": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "commands": {
+            "at": {
+              "file": "projects/duplicate-a/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "fmt": {
+                  "at": {
+                    "file": "projects/duplicate-a/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/duplicate-a/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Format",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/duplicate-a/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "fmt",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/duplicate-a/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/duplicate-a/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/duplicate-a/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Claims the same names as its twin",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "services": {
+            "at": {
+              "file": "projects/duplicate-a/project.nix",
+              "line": 11,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "db": {
+                  "at": {
+                    "file": "projects/duplicate-a/project.nix",
+                    "line": 11,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/duplicate-a/project.nix",
+                          "line": 12,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "A database",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/duplicate-a/project.nix",
+                          "line": 13,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "db",
+                          "context": false
+                        }
+                      },
+                      "restart": {
+                        "at": {
+                          "file": "projects/duplicate-a/project.nix",
+                          "line": 14,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "never",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "duplicate-b": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "commands": {
+            "at": {
+              "file": "projects/duplicate-b/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "fmt": {
+                  "at": {
+                    "file": "projects/duplicate-b/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/duplicate-b/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Format",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/duplicate-b/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "fmt",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/duplicate-b/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/duplicate-b/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/duplicate-b/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Claims the same names as its twin",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "services": {
+            "at": {
+              "file": "projects/duplicate-b/project.nix",
+              "line": 11,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "db": {
+                  "at": {
+                    "file": "projects/duplicate-b/project.nix",
+                    "line": 11,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/duplicate-b/project.nix",
+                          "line": 12,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "A database",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/duplicate-b/project.nix",
+                          "line": 13,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "db",
+                          "context": false
+                        }
+                      },
+                      "restart": {
+                        "at": {
+                          "file": "projects/duplicate-b/project.nix",
+                          "line": 14,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "never",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "empty-list": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/empty-list/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/empty-list/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": []
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/empty-list/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Nobody maintains this",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "extensions": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "extensions": {
+            "at": {
+              "file": "projects/extensions/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "layout": {
+                  "at": {
+                    "file": "projects/extensions/project.nix",
+                    "line": 12,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "pages": {
+                        "at": {
+                          "file": "projects/extensions/project.nix",
+                          "line": 12,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "../outside/*.md",
+                              "context": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "meta": {
+                  "at": {
+                    "file": "projects/extensions/project.nix",
+                    "line": 9,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "logo": {
+                        "at": {
+                          "file": "projects/extensions/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "path",
+                          "value": "projects/extensions/project.nix"
+                        }
+                      }
+                    }
+                  }
+                },
+                "nobody": {
+                  "at": {
+                    "file": "projects/extensions/project.nix",
+                    "line": 10,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {}
+                  }
+                },
+                "sneaky": {
+                  "at": {
+                    "file": "projects/extensions/project.nix",
+                    "line": 11,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Kept at @root@/projects/extensions",
+                    "context": false
+                  }
+                },
+                "team": {
+                  "at": {
+                    "file": "projects/extensions/project.nix",
+                    "line": 8,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "owner": {
+                        "at": {
+                          "file": "projects/extensions/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Not An Identifier",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/extensions/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/extensions/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/extensions/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Extension values the schemas refuse",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "jdk-again": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/jdk-again/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/jdk-again/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/jdk-again/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Defines the JDK toolchain a second time",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "toolchains": {
+            "at": {
+              "file": "projects/jdk-again/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "jdk": {
+                  "at": {
+                    "file": "projects/jdk-again/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/jdk-again/project.nix",
+                          "line": 7,
+                          "column": 3
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Another JDK",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "jdk-owner": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/jdk-owner/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/jdk-owner/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/jdk-owner/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Owns the JDK toolchain",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "toolchains": {
+            "at": {
+              "file": "projects/jdk-owner/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "jdk": {
+                  "at": {
+                    "file": "projects/jdk-owner/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/jdk-owner/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "JDK 21",
+                          "context": false
+                        }
+                      },
+                      "env": {
+                        "at": {
+                          "file": "projects/jdk-owner/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "attrs",
+                          "fields": {
+                            "JAVA_HOME": {
+                              "at": {
+                                "file": "projects/jdk-owner/project.nix",
+                                "line": 10,
+                                "column": 5
+                              },
+                              "value": {
+                                "kind": "attrs",
+                                "fields": {
+                                  "package": {
+                                    "at": {
+                                      "file": "projects/jdk-owner/project.nix",
+                                      "line": 11,
+                                      "column": 7
+                                    },
+                                    "value": {
+                                      "kind": "string",
+                                      "value": "jdk",
+                                      "context": false
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "packages": {
+                        "at": {
+                          "file": "projects/jdk-owner/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "jdk",
+                              "context": false
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "jvm-app": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "env": {
+            "at": {
+              "file": "projects/jvm-app/project.nix",
+              "line": 12,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "JAVA_HOME": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 12,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "/opt/jdk",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "packages": {
+            "at": {
+              "file": "projects/jvm-app/project.nix",
+              "line": 11,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "kotlin",
+                  "context": false
+                }
+              ]
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/jvm-app/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "imports": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "jdk": {
+                        "at": {
+                          "file": "projects/jvm-app/project.nix",
+                          "line": 7,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "jdk-owner",
+                          "context": false
+                        }
+                      },
+                      "rust": {
+                        "at": {
+                          "file": "projects/jvm-app/project.nix",
+                          "line": 8,
+                          "column": 7
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "jdk-owner",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/jvm-app/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Uses the JDK toolchain and Kotlin, which brings another JDK",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "laundered": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/laundered/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/laundered/project.nix",
+                    "line": 9,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/laundered/project.nix",
+                    "line": 8,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Copied to /nix/store/mxyrxy25275rjca3r7sf6h4mb4l9qfnw-laundered",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "location": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "extensions": {
+            "at": {
+              "file": "projects/location/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "meta": {
+                  "at": {
+                    "file": "projects/location/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "@root@/projects/location": {
+                        "at": {
+                          "file": "projects/location/project.nix",
+                          "line": 7,
+                          "column": 3
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "keyed by the checkout's location",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/location/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/location/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/location/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Lives at @root@/projects/location",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "missing": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/missing/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/missing/project.nix",
+                    "line": 3,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "projects/missing/project.nix",
+              "line": 4,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "build": {
+                  "at": {
+                    "file": "projects/missing/project.nix",
+                    "line": 4,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/missing/project.nix",
+                          "line": 4,
+                          "column": 3
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Has no command",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "no-factory": {
+      "factory": false,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/no-factory/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/no-factory/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/no-factory/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Never went through the factory",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "outside": null,
+    "overlap": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/dangling/inner/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/dangling/inner/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/dangling/inner/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Inside another project's directory",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "overlay": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "overrides": {
+            "at": {
+              "file": "projects/overlay/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "hello": {
+                  "at": {
+                    "file": "projects/overlay/project.nix",
+                    "line": 7,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "package": {
+                        "at": {
+                          "file": "projects/overlay/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "function"
+                        }
+                      },
+                      "reason": {
+                        "at": {
+                          "file": "projects/overlay/project.nix",
+                          "line": 8,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "a patched hello",
+                          "context": false
+                        }
+                      },
+                      "release": {
+                        "at": {
+                          "file": "projects/overlay/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "upstream takes the patch",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/overlay/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/overlay/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/overlay/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Brings an overlay of its own",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "path-variable": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "env": {
+            "at": {
+              "file": "projects/path-variable/project.nix",
+              "line": 8,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "PATH": {
+                  "at": {
+                    "file": "projects/path-variable/project.nix",
+                    "line": 8,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "/usr/bin",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/path-variable/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/path-variable/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/path-variable/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Sets the shell's path itself",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "picks": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "env": {
+            "at": {
+              "file": "projects/picks/project.nix",
+              "line": 11,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "TOOL_HOME": {
+                  "at": {
+                    "file": "projects/picks/project.nix",
+                    "line": 11,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "package": {
+                        "at": {
+                          "file": "projects/picks/project.nix",
+                          "line": 11,
+                          "column": 3
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "elsewhere",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "packages": {
+            "at": {
+              "file": "projects/picks/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "jdk",
+                  "context": false
+                },
+                {
+                  "kind": "string",
+                  "value": "nowhere",
+                  "context": false
+                }
+              ]
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/picks/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/picks/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/picks/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Picks packages the catalog doesn't name",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sound": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/sound/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/sound/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/sound/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "A project with nothing wrong",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "split": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "commands": {
+            "at": {
+              "file": "projects/split/project.nix",
+              "line": 8,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "check": {
+                  "at": null,
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/split/project.nix",
+                          "line": 8,
+                          "column": 61
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Check without a command line",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/split/project.nix",
+              "line": 4,
+              "column": 5
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/split/project.nix",
+                    "line": 6,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/split/project.nix",
+                    "line": 5,
+                    "column": 7
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Split across files",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "projects/split/steps.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "build": {
+                  "at": {
+                    "file": "projects/split/steps.nix",
+                    "line": 3,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "after": {
+                        "at": {
+                          "file": "projects/split/steps.nix",
+                          "line": 6,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "list",
+                          "items": [
+                            {
+                              "kind": "string",
+                              "value": "Compile",
+                              "context": false
+                            }
+                          ]
+                        }
+                      },
+                      "description": {
+                        "at": {
+                          "file": "projects/split/steps.nix",
+                          "line": 4,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Build",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/split/steps.nix",
+                          "line": 5,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "build",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "store-reference": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/store-reference/project.nix",
+              "line": 10,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/store-reference/project.nix",
+                    "line": 12,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/store-reference/project.nix",
+                    "line": 11,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Built by /nix/store/v05r7ivns2bhgy47x8cw3k2mxgqriyc8-fixture",
+                    "context": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "unknown-options": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/unknown-options/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/unknown-options/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "owner": {
+                  "at": {
+                    "file": "projects/unknown-options/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "someone",
+                    "context": false
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/unknown-options/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Sets options Shikumi doesn't have",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "projects/unknown-options/project.nix",
+              "line": 9,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "lint": {
+                  "at": {
+                    "file": "projects/unknown-options/project.nix",
+                    "line": 9,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "cmd": {
+                        "at": {
+                          "file": "projects/unknown-options/project.nix",
+                          "line": 12,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "lint",
+                          "context": false
+                        }
+                      },
+                      "description": {
+                        "at": {
+                          "file": "projects/unknown-options/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Lint",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/unknown-options/project.nix",
+                          "line": 11,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "lint",
+                          "context": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "tasks": {
+            "at": {
+              "file": "projects/unknown-options/project.nix",
+              "line": 8,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "build": {
+                  "at": {
+                    "file": "projects/unknown-options/project.nix",
+                    "line": 8,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "wrong-type": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "commands": {
+            "at": {
+              "file": "projects/wrong-type/project.nix",
+              "line": 8,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "run": {
+                  "at": {
+                    "file": "projects/wrong-type/project.nix",
+                    "line": 8,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "attrs",
+                    "fields": {
+                      "description": {
+                        "at": {
+                          "file": "projects/wrong-type/project.nix",
+                          "line": 9,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "string",
+                          "value": "Runs a function instead of a command line",
+                          "context": false
+                        }
+                      },
+                      "exec": {
+                        "at": {
+                          "file": "projects/wrong-type/project.nix",
+                          "line": 10,
+                          "column": 5
+                        },
+                        "value": {
+                          "kind": "function"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/wrong-type/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/wrong-type/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "someone",
+                    "context": false
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/wrong-type/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Maintainers is a string and steps a list",
+                    "context": false
+                  }
+                }
+              }
+            }
+          },
+          "steps": {
+            "at": {
+              "file": "projects/wrong-type/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": []
+            }
+          }
+        }
+      }
+    }
+  }
+}

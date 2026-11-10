@@ -45,6 +45,39 @@ impl Sha256 {
         format!("sha256-{}", base64(&self.0))
     }
 
+    /// reads the `sha256-<base64>` form `to_sri` writes, and only that form: 43 digits whose last
+    /// carries no bits past the hash, then one `=`.
+    pub fn parse_sri(text: &str) -> Result<Self, HashParseError> {
+        let refuse = || HashParseError(text.to_owned());
+        let digits = text
+            .strip_prefix("sha256-")
+            .and_then(|rest| rest.strip_suffix('='))
+            .filter(|digits| digits.len() == 43)
+            .ok_or_else(refuse)?;
+        let mut out = [0u8; 32];
+        let (mut held, mut bits, mut at) = (0u32, 0u32, 0usize);
+        for digit in digits.bytes() {
+            let value = BASE64.iter().position(|&d| d == digit).ok_or_else(refuse)?;
+            held = held << 6 | value as u32;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                if at == 32 {
+                    return Err(refuse());
+                }
+                out[at] = (held >> bits) as u8;
+                at += 1;
+            }
+            held &= (1 << bits) - 1;
+        }
+        // 43 digits are 258 bits: the two past the hash have to be zero, or the text isn't the
+        // one form this hash writes.
+        if held != 0 {
+            return Err(refuse());
+        }
+        Ok(Self(out))
+    }
+
     /// reads the bare lowercase hex Nix prints for a NAR hash in `nix-store --dump-db`.
     pub fn parse_hex(text: &str) -> Result<Self, HashParseError> {
         let bytes = text.as_bytes();
@@ -66,7 +99,7 @@ pub struct HashParseError(String);
 
 impl fmt::Display for HashParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "'{}' isn't a sha256 in lowercase hex", self.0)
+        write!(f, "'{}' isn't a sha256 in the form it's read in", self.0)
     }
 }
 
@@ -80,10 +113,13 @@ fn hex_value(c: u8) -> Option<u8> {
     }
 }
 
-/// standard base64 with padding. a few lines here rather than a crate, since it's the only use and
-/// only ever encodes 32 bytes.
+/// standard base64's digits, in value order.
+const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// standard base64 with padding. a few lines here rather than a crate, since it only ever encodes
+/// and decodes 32 bytes.
 fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = BASE64;
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let n = chunk
@@ -131,6 +167,24 @@ mod tests {
         let upper = Sha256::digest(b"x").to_hex().to_uppercase();
         assert!(Sha256::parse_hex(&upper).is_err());
         assert!(Sha256::parse_hex("abcd").is_err());
+    }
+
+    #[test]
+    fn sri_reads_back_as_the_digest_it_spells() {
+        for bytes in [b"" as &[u8], b"shikumi", &[0xff; 100]] {
+            let digest = Sha256::digest(bytes);
+            assert_eq!(Sha256::parse_sri(&digest.to_sri()), Ok(digest));
+        }
+        let sri = Sha256::digest(b"").to_sri();
+        for wrong in [
+            sri.replace("FU=", "FV="),
+            sri.replace('=', ""),
+            sri.replace("sha256-", "sha512-"),
+            format!("{sri}="),
+            sri.replace('4', "!"),
+        ] {
+            assert!(Sha256::parse_sri(&wrong).is_err(), "{wrong}");
+        }
     }
 
     #[test]

@@ -2,6 +2,8 @@
 //! stdin, NUL-separated: the flake check lists its source tree, which is exactly what Git tracks,
 //! and a developer pipes `git ls-files -z`. both run the same code over the same kind of list.
 
+mod attributes;
+mod history;
 mod links;
 mod names;
 
@@ -11,29 +13,98 @@ use std::io::{self, Read};
 use std::process::ExitCode;
 use std::thread;
 
-const USAGE: &str = "usage: repo-check <links|names> < NUL-separated tracked paths\n       \
-                     repo-check digest < name";
+/// how every check reads Markdown, so the links check and the history check see the same document.
+const MARKDOWN: pulldown_cmark::Options = pulldown_cmark::Options::ENABLE_TABLES
+    .union(pulldown_cmark::Options::ENABLE_FOOTNOTES)
+    .union(pulldown_cmark::Options::ENABLE_STRIKETHROUGH)
+    .union(pulldown_cmark::Options::ENABLE_TASKLISTS);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
     Links,
     Names,
+    /// history markers in the product docs.
+    History,
+    /// attributes that silence a lint in the Rust source.
+    Attributes,
     /// prints the digest line for a name to add to the private-name list.
     Digest,
 }
 
+/// what a command reads on stdin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Input {
+    TrackedPaths,
+    Name,
+}
+
+impl Input {
+    const ALL: [Self; 2] = [Self::TrackedPaths, Self::Name];
+
+    const fn describe(self) -> &'static str {
+        match self {
+            Self::TrackedPaths => "NUL-separated tracked paths",
+            Self::Name => "name",
+        }
+    }
+}
+
 impl Command {
+    /// every command, in the order the help lists them. the help and the parsing both read this, so
+    /// a command can't be parsed without being listed, and a variant left out of it is never
+    /// constructed, which the gate's Clippy refuses.
+    const ALL: [Self; 5] = [
+        Self::Links,
+        Self::Names,
+        Self::History,
+        Self::Attributes,
+        Self::Digest,
+    ];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Links => "links",
+            Self::Names => "names",
+            Self::History => "history",
+            Self::Attributes => "attributes",
+            Self::Digest => "digest",
+        }
+    }
+
+    const fn input(self) -> Input {
+        match self {
+            Self::Links | Self::Names | Self::History | Self::Attributes => Input::TrackedPaths,
+            Self::Digest => Input::Name,
+        }
+    }
+
     fn parse(args: &[String]) -> Option<Self> {
         match args {
-            [command] => match command.as_str() {
-                "links" => Some(Self::Links),
-                "names" => Some(Self::Names),
-                "digest" => Some(Self::Digest),
-                _ => None,
-            },
+            [command] => Self::ALL.into_iter().find(|c| c.name() == command),
             _ => None,
         }
     }
+}
+
+/// one usage line per kind of input, naming every command that reads it.
+fn usage() -> String {
+    let lines: Vec<String> = Input::ALL
+        .into_iter()
+        .filter_map(|input| {
+            let names: Vec<&str> = Command::ALL
+                .into_iter()
+                .filter(|command| command.input() == input)
+                .map(Command::name)
+                .collect();
+            let commands = match names.as_slice() {
+                [] => return None,
+                [one] => (*one).to_owned(),
+                many => format!("<{}>", many.join("|")),
+            };
+            Some(format!("repo-check {commands} < {}", input.describe()))
+        })
+        .collect();
+    format!("usage: {}", lines.join("\n       "))
 }
 
 /// 1-based line and byte column.
@@ -92,13 +163,15 @@ impl fmt::Display for Finding {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = Command::parse(&args) else {
-        eprintln!("{USAGE}");
+        eprintln!("{}", usage());
         return ExitCode::from(2);
     };
     let findings = match command {
         Command::Digest => return digest(),
         Command::Links => tracked_paths().and_then(|paths| check_links(&paths)),
         Command::Names => tracked_paths().and_then(|paths| check_names(&paths)),
+        Command::History => tracked_paths().and_then(|paths| check_history(&paths)),
+        Command::Attributes => tracked_paths().and_then(|paths| check_attributes(&paths)),
     };
     match findings {
         Ok(findings) if findings.is_empty() => ExitCode::SUCCESS,
@@ -146,6 +219,26 @@ fn check_names(paths: &[String]) -> io::Result<Vec<Finding>> {
         let contents = std::fs::read(path)
             .map_err(|e| io::Error::new(e.kind(), format!("reading {path}: {e}")))?;
         Ok(names::check(&matcher, path, &contents))
+    });
+    flatten(per_file)
+}
+
+fn check_history(paths: &[String]) -> io::Result<Vec<Finding>> {
+    let pages: Vec<&String> = paths.iter().filter(|p| history::applies(p)).collect();
+    let per_file = parallel_map(&pages, |path| {
+        let contents = std::fs::read(path)
+            .map_err(|e| io::Error::new(e.kind(), format!("reading {path}: {e}")))?;
+        Ok(history::check(path, &contents))
+    });
+    flatten(per_file)
+}
+
+fn check_attributes(paths: &[String]) -> io::Result<Vec<Finding>> {
+    let sources: Vec<&String> = paths.iter().filter(|p| attributes::applies(p)).collect();
+    let per_file = parallel_map(&sources, |path| {
+        let contents = std::fs::read(path)
+            .map_err(|e| io::Error::new(e.kind(), format!("reading {path}: {e}")))?;
+        Ok(attributes::check(path, &contents))
     });
     flatten(per_file)
 }
@@ -202,7 +295,10 @@ fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Ve
             .collect();
         handles
             .into_iter()
-            .flat_map(|h| h.join().expect("a check worker panicked"))
+            .flat_map(|h| {
+                h.join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
             .collect()
     })
 }
@@ -229,9 +325,38 @@ mod tests {
         assert_eq!(parse(&["links"]), Some(Command::Links));
         assert_eq!(parse(&["names"]), Some(Command::Names));
         assert_eq!(parse(&["digest"]), Some(Command::Digest));
+        assert_eq!(parse(&["history"]), Some(Command::History));
+        assert_eq!(parse(&["attributes"]), Some(Command::Attributes));
         assert_eq!(parse(&["link"]), None);
         assert_eq!(parse(&[]), None);
         assert_eq!(parse(&["links", "names"]), None);
+    }
+
+    // the help is generated from the same table the parsing reads; this holds it to naming every
+    // command with what it reads, one line per kind of input.
+    #[test]
+    fn the_help_names_every_command() {
+        let help = usage();
+        assert_eq!(
+            help,
+            "usage: repo-check <links|names|history|attributes> < NUL-separated tracked paths\n       \
+             repo-check digest < name"
+        );
+        for command in Command::ALL {
+            let line = help
+                .lines()
+                .find(|line| line.ends_with(command.input().describe()))
+                .unwrap_or_else(|| panic!("no help line for {}", command.name()));
+            let listed = line
+                .split(|c: char| !c.is_ascii_alphabetic() && c != '-')
+                .any(|word| word == command.name());
+            assert!(
+                listed,
+                "{} is missing from the help:\n{help}",
+                command.name()
+            );
+            assert_eq!(Command::parse(&[command.name().to_owned()]), Some(command));
+        }
     }
 
     #[test]

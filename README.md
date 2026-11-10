@@ -6,8 +6,12 @@ rebuilds only the units it actually changed. The projects in a repository declar
 Shikumi derives their dev shells, verbs, hooks, services, formatting and build graph from those
 declarations.
 
-Status: design approved; the product isn't implemented yet. The repository has its dev shell, its gate
-and the benchmark harness that every speed claim will be measured with.
+Status: the design is approved, and the product is partly built. The repository has its dev shell, its
+gate, the benchmark harness that every speed claim is measured with, and the core's first crates.
+Projects declare themselves, pick their packages from one catalog and their toolchains from one
+owner each, and come out as one validated registry document, which `shikumi registry` prints,
+evaluated against the nixpkgs the repository's own lock pins and cached until a declaration changes.
+[The capability page](docs/reference/capabilities.md) gives each part's status.
 
 The docs start at [docs/README.md](docs/README.md).
 

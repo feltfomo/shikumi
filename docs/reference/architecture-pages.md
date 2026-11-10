@@ -89,7 +89,7 @@ working around the old rule.
 
 Difficulty doesn't license a bypass. If honouring an invariant makes a fix hard, the fix is harder; it
 doesn't get to break the invariant locally, add a special case beside the owner or leave the page
-describing a rule the code no longer keeps. When the invariant itself is wrong, say so and change it
+describing a rule the code doesn't keep. When the invariant itself is wrong, say so and change it
 through review.
 
 Mark each statement's status when it isn't current behavior. A page describes the tree as it is, and

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shikumi.toolchain-context",
+  "description": "the toolchain context of every system the manifest names.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "$ref": "#/$defs/ToolchainContextName"
+    },
+    "systems": {
+      "description": "each system, and its context, or null for a system the pinned nixpkgs doesn't know.",
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SystemContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "version": {
+      "$ref": "#/$defs/ToolchainContextVersion"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "systems"
+  ],
+  "$defs": {
+    "OutputPath": {
+      "type": "string",
+      "pattern": "^/.+/[0123456789abcdfghijklmnpqrsvwxyz]{32}-[^/]+$"
+    },
+    "SystemContext": {
+      "description": "the toolchain context on one system: each catalog entry's package, by catalog name, as the\nstore path of its output, or null where nixpkgs refuses to compute one, as it does for a\npackage whose licence or known vulnerability it won't evaluate.",
+      "type": "object",
+      "properties": {
+        "packages": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OutputPath"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "packages"
+      ]
+    },
+    "ToolchainContextName": {
+      "const": "shikumi.toolchain-context"
+    },
+    "ToolchainContextVersion": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ]
+    }
+  }
+}

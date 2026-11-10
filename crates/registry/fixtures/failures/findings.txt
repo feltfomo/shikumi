@@ -1,0 +1,86 @@
+error[thrown]: evaluation threw an error: the catalog's JDK isn't chosen yet
+ --> catalog/catalog.nix:4:18
+  |
+4 |   packages.jdk = throw "the catalog's JDK isn't chosen yet";
+  |                  ^^^^^
+
+error[assertion]: this assertion failed
+ --> projects/assertion/project.nix:5:1
+  |
+5 | assert replicas > 0;
+  | ^^^^^^
+note: reached from here
+ --> projects/assertion/project.nix:1:1
+  |
+1 | { shikumi, ... }:
+  | ^
+
+error[type-error]: evaluation stopped at a value of the wrong type: attempt to call something which is not a function but a string: "service"
+ --> projects/call-type/project.nix:7:15
+  |
+7 |     summary = name "called as a function";
+  |               ^^^^
+
+error[type-error]: evaluation stopped at a value of the wrong type: cannot coerce a function to a string: «lambda project @ «shikumi»/factory.nix:6:13»
+ --> projects/coerce/project.nix:6:28
+  |
+6 |     summary = "made by " + shikumi.project;
+  |                            ^^^^^^^
+
+error[thrown]: evaluation threw an error: toInt: Could not convert "someone" to int.
+ --> projects/library/project.nix
+
+error[missing]: `project.summary` is required but not defined
+ --> projects/missing-summary/project.nix:3:3
+  |
+3 |   project.maintainers = [ "someone" ];
+  |   ^^^^^^^
+  = help: add `summary = ...;`
+
+error[syntax]: this file isn't valid Nix: syntax error, unexpected '=', expecting ';'
+ --> projects/syntax/settings.nix:5:15
+  |
+5 |   maintainers = [ "someone" ];
+  |               ^
+note: reached from here
+ --> projects/syntax/project.nix:3:13
+  |
+3 |   project = import ./settings.nix;
+  |             ^^^^^^
+
+error[thrown]: evaluation threw an error: summary is required
+ --> projects/thrown/helpers.nix:2:49
+  |
+2 |   required = name: value: if value == null then throw "${name} is required" else value;
+  |                                                 ^^^^^
+note: reached from here
+ --> projects/thrown/helpers.nix:2:20
+  |
+2 |   required = name: value: if value == null then throw "${name} is required" else value;
+  |                    ^^^^^
+note: reached from here
+ --> projects/thrown/project.nix:7:15
+  |
+7 |     summary = helpers.required "summary" null;
+  |               ^^^^^^^
+
+error[undefined-variable]: `sumary` is used here, but nothing defines it
+ --> projects/undefined/project.nix:4:15
+  |
+4 |     summary = sumary;
+  |               ^^^^^^
+  = help: define it in a `let`, or name it as an argument: a declaration file is called with `lib` and `shikumi`, and the manifest with `lib` and `types`
+
+error[thrown]: evaluation threw an error: uneven fails here first
+  --> projects/uneven/project.nix:10:13
+   |
+10 |     after = throw "uneven fails here first";
+   |             ^^^^^
+
+error[invalid-utf8]: `project.summary` holds text that isn't valid UTF-8, which the registry document can't carry
+ --> projects/utf8/project.nix:5:5
+  |
+5 |     summary = builtins.substring 0 1 "été";
+  |     ^^^^^^^
+  = help: cutting text by bytes, as `builtins.substring` does, can split a character in two
+

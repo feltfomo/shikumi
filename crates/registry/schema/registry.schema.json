@@ -1,0 +1,619 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shikumi.registry",
+  "description": "every project a repository composes, as Shikumi's checker accepted them, or every finding that\nrefused them. serde reads this shape; the rules that span its fields are checked in the\nconversion to [`Registry`], so a consumer can only act on a document through them.",
+  "type": "object",
+  "properties": {
+    "catalog": {
+      "description": "the repository's catalog, or null when it declares none, and when the document carries a\ndiagnostic.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Catalog"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      }
+    },
+    "focus": {
+      "description": "the project a focused composition centres on, or null for the global composition.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Identifier"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projects": {
+      "description": "every composed project, or null when the document carries a diagnostic.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z][a-z0-9-]*$": {
+          "$ref": "#/$defs/Project"
+        }
+      }
+    },
+    "remainder": {
+      "description": "the global composition's remainder; null in a focused one, and when the document carries a\ndiagnostic.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Remainder"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "$ref": "#/$defs/SchemaName"
+    },
+    "version": {
+      "$ref": "#/$defs/Version"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "catalog",
+    "diagnostics",
+    "focus",
+    "projects",
+    "remainder",
+    "schema",
+    "version"
+  ],
+  "$defs": {
+    "AttributePath": {
+      "description": "a nixpkgs attribute path: attribute names, each one Nix takes unquoted, joined by `.`, such as `jdk21` or `nodePackages.prettier`",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_'-]*(\\.[A-Za-z_][A-Za-z0-9_'-]*)*$"
+    },
+    "Catalog": {
+      "description": "the repository's catalog: the systems its package set is read for, every package a shell or\nstep may use, and the one overlay's entries.\nthe serde shape of the vocabulary's [`vocabulary::document_catalog`], whose descriptions its\nschema takes.",
+      "type": "object",
+      "properties": {
+        "overrides": {
+          "description": "the one overlay on the pinned nixpkgs, an entry per attribute it replaces or adds",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_'-]*$": {
+              "$ref": "#/$defs/Override"
+            }
+          }
+        },
+        "packages": {
+          "description": "every package a shell or step may use, by the name projects pick it with, each its attribute path in the pinned nixpkgs",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/AttributePath"
+            }
+          }
+        },
+        "systems": {
+          "description": "the systems its package set is read for, each one the pinned nixpkgs knows, such as `x86_64-linux`",
+          "$ref": "#/$defs/NonEmpty_Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "systems",
+        "packages",
+        "overrides"
+      ]
+    },
+    "Code": {
+      "description": "what kind of rule a finding broke, as a stable name programs can match on. the message says it\nfor people and is free to change; a code isn't.",
+      "type": "string",
+      "enum": [
+        "missing",
+        "type",
+        "invalid",
+        "enum",
+        "unknown-option",
+        "store-reference",
+        "location",
+        "unknown-reference",
+        "cycle",
+        "duplicate",
+        "conflict",
+        "second-overlay",
+        "no-declaration",
+        "not-a-declaration",
+        "overlap",
+        "syntax",
+        "undefined-variable",
+        "type-error",
+        "thrown",
+        "assertion",
+        "invalid-utf8",
+        "not-keyed",
+        "impure",
+        "evaluation",
+        "shikumi-bug"
+      ]
+    },
+    "Command": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "what it does, in a phrase a person reads",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ]
+    },
+    "Diagnostic": {
+      "description": "one finding, collected rather than thrown, so a document carries every one of them.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/Code"
+        },
+        "help": {
+          "description": "how to fix it, where there's one fix to name.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "message": {
+          "description": "what's wrong with the field, as a phrase the path reads before.",
+          "$ref": "#/$defs/Text"
+        },
+        "path": {
+          "description": "the field's path inside the declaration or manifest; empty for a finding about the whole\nfile or composition.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        },
+        "project": {
+          "description": "the project the finding belongs to; null for one about the manifest as a whole or a\nmanifest entry whose name isn't an identifier.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Related"
+          }
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "help",
+        "location",
+        "message",
+        "path",
+        "project",
+        "related",
+        "severity"
+      ]
+    },
+    "EnvValue": {
+      "description": "an environment variable's value: text as written, or a catalog package's location, which the\ntoolchain context resolves to a store path the document never carries.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/PackageLocation"
+        }
+      ]
+    },
+    "Identifier": {
+      "description": "an identifier: a lowercase letter, then lowercase letters, digits and hyphens",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "Location": {
+      "description": "where a finding points: a file relative to the repository root, and the position of the\nattribute that defined the field, or of the nearest enclosing one that has a position. null\nwhen nothing has one, and the finding is about the file as a whole.",
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Position"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "position"
+      ]
+    },
+    "NonEmpty_Text": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Text"
+      },
+      "minItems": 1
+    },
+    "Override": {
+      "description": "an entry of the catalog's overlay: why it exists and what lets it go. what it builds is\ndeclared and never copied here.",
+      "type": "object",
+      "properties": {
+        "reason": {
+          "description": "why the entry exists",
+          "$ref": "#/$defs/Text"
+        },
+        "release": {
+          "description": "what lets it go",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "release"
+      ]
+    },
+    "PackageLocation": {
+      "description": "where in a catalog package a variable points: the package, and a path inside it, or null for\nthe package itself.",
+      "type": "object",
+      "properties": {
+        "package": {
+          "description": "the catalog package, by catalog name",
+          "$ref": "#/$defs/Identifier"
+        },
+        "path": {
+          "description": "a path inside it; null points at the package itself",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "path"
+      ]
+    },
+    "Position": {
+      "description": "a line and column, both counted from 1 as the evaluator counts them.",
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "line",
+        "column"
+      ]
+    },
+    "Project": {
+      "description": "a project as the document carries it: the serde shape of the vocabulary's\n[`vocabulary::document_project`], whose descriptions its schema takes. each extension\nnamespace's value is exactly as the repository declared it, and Shikumi gives it no meaning.",
+      "type": "object",
+      "properties": {
+        "commands": {
+          "description": "entry points on the shell's path, by a name unique across the composition",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Command"
+            }
+          }
+        },
+        "dependsOn": {
+          "description": "listed projects it depends on; a focused composition takes them with it",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "directory": {
+          "description": "the project's directory, as the manifest lists it",
+          "$ref": "#/$defs/RelativePath"
+        },
+        "env": {
+          "description": "environment variables its shells and steps get, by name",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/EnvValue"
+            }
+          }
+        },
+        "extensions": {
+          "description": "the repository's own metadata, one namespace per schema its manifest declares",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": true
+          }
+        },
+        "imports": {
+          "description": "toolchains it uses from other projects: each toolchain's name, and the project that defines it, which a focused composition takes with it",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Identifier"
+            }
+          }
+        },
+        "maintainers": {
+          "description": "who maintains it",
+          "$ref": "#/$defs/NonEmpty_Text"
+        },
+        "packages": {
+          "description": "catalog packages on its shells' path, by catalog name",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "services": {
+          "description": "long-running workers, by a name unique across the composition",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Service"
+            }
+          }
+        },
+        "steps": {
+          "description": "the project's steps, by name",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Step"
+            }
+          }
+        },
+        "summary": {
+          "description": "what the project is, in one line",
+          "$ref": "#/$defs/Text"
+        },
+        "toolchains": {
+          "description": "toolchain settings it owns, by a name no other project defines; other projects import them",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "$ref": "#/$defs/Toolchain"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "summary",
+        "maintainers",
+        "dependsOn",
+        "imports",
+        "packages",
+        "env",
+        "toolchains",
+        "steps",
+        "commands",
+        "services",
+        "extensions"
+      ]
+    },
+    "Related": {
+      "description": "a second place a finding involves, such as the first declaration of a duplicated name.",
+      "type": "object",
+      "properties": {
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "message": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "location",
+        "message"
+      ]
+    },
+    "RelativePath": {
+      "description": "a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part",
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$"
+    },
+    "Remainder": {
+      "description": "the scope of every source no project owns: the repository minus these directories.",
+      "type": "object",
+      "properties": {
+        "excludes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelativePath"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "excludes"
+      ]
+    },
+    "Restart": {
+      "description": "when the supervisor restarts a service.",
+      "type": "string",
+      "enum": [
+        "never",
+        "on-failure",
+        "always"
+      ]
+    },
+    "SchemaName": {
+      "const": "shikumi.registry"
+    },
+    "Segment": {
+      "description": "one step of a field's path: an attribute name, or a list element's index.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      ]
+    },
+    "Service": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "what it does, in a phrase a person reads",
+          "$ref": "#/$defs/Text"
+        },
+        "restart": {
+          "description": "when the supervisor restarts it",
+          "$ref": "#/$defs/Restart"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "restart"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "error"
+      ]
+    },
+    "Step": {
+      "description": "a step as the document carries it. its command line is declared and never copied here.",
+      "type": "object",
+      "properties": {
+        "after": {
+          "description": "steps of the same project this one runs after when both run",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        },
+        "description": {
+          "description": "what it does, in a phrase a person reads",
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "after"
+      ]
+    },
+    "Text": {
+      "description": "non-blank text",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "Toolchain": {
+      "description": "a toolchain setting, such as the JDK or the Rust toolchain: what it puts on the path and in the\nenvironment of every project that uses it.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "what it does, in a phrase a person reads",
+          "$ref": "#/$defs/Text"
+        },
+        "env": {
+          "description": "environment variables every project that uses it gets",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/EnvValue"
+            }
+          }
+        },
+        "packages": {
+          "description": "catalog packages on the path of every project that uses it",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "packages",
+        "env"
+      ]
+    },
+    "Version": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ]
+    }
+  }
+}

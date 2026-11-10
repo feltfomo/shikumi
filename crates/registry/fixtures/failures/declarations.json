@@ -1,0 +1,597 @@
+{
+  "schema": "shikumi.declarations",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "focus": null,
+  "manifest": {
+    "file": "shikumi.nix",
+    "value": {
+      "kind": "attrs",
+      "fields": {
+        "catalog": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 19,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "directory": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 20,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "catalog",
+                  "context": false
+                }
+              },
+              "systems": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 21,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "list",
+                  "items": [
+                    {
+                      "kind": "string",
+                      "value": "x86_64-linux",
+                      "context": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "projects": {
+          "at": {
+            "file": "shikumi.nix",
+            "line": 5,
+            "column": 3
+          },
+          "value": {
+            "kind": "attrs",
+            "fields": {
+              "assertion": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 6,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/assertion",
+                  "context": false
+                }
+              },
+              "call-type": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 7,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/call-type",
+                  "context": false
+                }
+              },
+              "coerce": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 8,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/coerce",
+                  "context": false
+                }
+              },
+              "consumer": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 9,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/consumer",
+                  "context": false
+                }
+              },
+              "library": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 10,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/library",
+                  "context": false
+                }
+              },
+              "missing-summary": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 11,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/missing-summary",
+                  "context": false
+                }
+              },
+              "sound": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 12,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/sound",
+                  "context": false
+                }
+              },
+              "syntax": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 13,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/syntax",
+                  "context": false
+                }
+              },
+              "thrown": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 14,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/thrown",
+                  "context": false
+                }
+              },
+              "undefined": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 15,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/undefined",
+                  "context": false
+                }
+              },
+              "uneven": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 16,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/uneven",
+                  "context": false
+                }
+              },
+              "utf8": {
+                "at": {
+                  "file": "shikumi.nix",
+                  "line": 17,
+                  "column": 5
+                },
+                "value": {
+                  "kind": "string",
+                  "value": "projects/utf8",
+                  "context": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "catalog": {
+    "file": "catalog/catalog.nix",
+    "systems": {
+      "x86_64-linux": {
+        "failure": {
+          "kind": "thrown",
+          "message": "the catalog's JDK isn't chosen yet",
+          "origin": {
+            "user": {
+              "frames": [
+                {
+                  "file": "catalog/catalog.nix",
+                  "line": 4,
+                  "column": 18
+                }
+              ],
+              "field": null
+            }
+          }
+        }
+      }
+    }
+  },
+  "projects": {
+    "assertion": {
+      "failure": {
+        "kind": "assertion",
+        "message": "assertion '(__lessThan 0 replicas)' failed",
+        "origin": {
+          "user": {
+            "frames": [
+              {
+                "file": "projects/assertion/project.nix",
+                "line": 5,
+                "column": 1
+              },
+              {
+                "file": "projects/assertion/project.nix",
+                "line": 1,
+                "column": 1
+              }
+            ],
+            "field": null
+          }
+        }
+      }
+    },
+    "call-type": {
+      "failure": {
+        "kind": "type",
+        "message": "attempt to call something which is not a function but a string: \"service\"",
+        "origin": {
+          "user": {
+            "frames": [
+              {
+                "file": "projects/call-type/project.nix",
+                "line": 7,
+                "column": 15
+              }
+            ],
+            "field": null
+          }
+        }
+      }
+    },
+    "coerce": {
+      "failure": {
+        "kind": "type",
+        "message": "cannot coerce a function to a string: «lambda project @ «shikumi»/factory.nix:6:13»",
+        "origin": {
+          "user": {
+            "frames": [
+              {
+                "file": "projects/coerce/project.nix",
+                "line": 6,
+                "column": 28
+              }
+            ],
+            "field": null
+          }
+        }
+      }
+    },
+    "consumer": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/consumer/project.nix",
+              "line": 4,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "dependsOn": {
+                  "at": {
+                    "file": "projects/consumer/project.nix",
+                    "line": 7,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "thrown",
+                        "context": false
+                      },
+                      {
+                        "kind": "string",
+                        "value": "undefined",
+                        "context": false
+                      },
+                      {
+                        "kind": "string",
+                        "value": "uneven",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "maintainers": {
+                  "at": {
+                    "file": "projects/consumer/project.nix",
+                    "line": 6,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/consumer/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Depends on broken projects",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "library": {
+      "failure": {
+        "kind": "thrown",
+        "message": "toInt: Could not convert \"someone\" to int.",
+        "origin": {
+          "user": {
+            "frames": [],
+            "field": null
+          }
+        }
+      }
+    },
+    "missing-summary": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "project": {
+            "at": {
+              "file": "projects/missing-summary/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/missing-summary/project.nix",
+                    "line": 3,
+                    "column": 3
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sound": {
+      "factory": true,
+      "value": {
+        "kind": "attrs",
+        "fields": {
+          "packages": {
+            "at": {
+              "file": "projects/sound/project.nix",
+              "line": 7,
+              "column": 3
+            },
+            "value": {
+              "kind": "list",
+              "items": [
+                {
+                  "kind": "string",
+                  "value": "jdk",
+                  "context": false
+                }
+              ]
+            }
+          },
+          "project": {
+            "at": {
+              "file": "projects/sound/project.nix",
+              "line": 3,
+              "column": 3
+            },
+            "value": {
+              "kind": "attrs",
+              "fields": {
+                "maintainers": {
+                  "at": {
+                    "file": "projects/sound/project.nix",
+                    "line": 5,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "list",
+                    "items": [
+                      {
+                        "kind": "string",
+                        "value": "someone",
+                        "context": false
+                      }
+                    ]
+                  }
+                },
+                "summary": {
+                  "at": {
+                    "file": "projects/sound/project.nix",
+                    "line": 4,
+                    "column": 5
+                  },
+                  "value": {
+                    "kind": "string",
+                    "value": "Evaluates",
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "syntax": {
+      "failure": {
+        "kind": "syntax",
+        "message": "syntax error, unexpected '=', expecting ';'",
+        "origin": {
+          "user": {
+            "frames": [
+              {
+                "file": "projects/syntax/settings.nix",
+                "line": 5,
+                "column": 15
+              },
+              {
+                "file": "projects/syntax/project.nix",
+                "line": 3,
+                "column": 13
+              }
+            ],
+            "field": null
+          }
+        }
+      }
+    },
+    "thrown": {
+      "failure": {
+        "kind": "thrown",
+        "message": "summary is required",
+        "origin": {
+          "user": {
+            "frames": [
+              {
+                "file": "projects/thrown/helpers.nix",
+                "line": 2,
+                "column": 49
+              },
+              {
+                "file": "projects/thrown/helpers.nix",
+                "line": 2,
+                "column": 20
+              },
+              {
+                "file": "projects/thrown/project.nix",
+                "line": 7,
+                "column": 15
+              }
+            ],
+            "field": null
+          }
+        }
+      }
+    },
+    "undefined": {
+      "failure": {
+        "kind": "undefined-variable",
+        "message": "sumary",
+        "origin": {
+          "user": {
+            "frames": [
+              {
+                "file": "projects/undefined/project.nix",
+                "line": 4,
+                "column": 15
+              }
+            ],
+            "field": null
+          }
+        }
+      }
+    },
+    "uneven": {
+      "failure": {
+        "kind": "thrown",
+        "message": "uneven fails here first",
+        "origin": {
+          "user": {
+            "frames": [
+              {
+                "file": "projects/uneven/project.nix",
+                "line": 10,
+                "column": 13
+              }
+            ],
+            "field": null
+          }
+        }
+      }
+    },
+    "utf8": {
+      "failure": {
+        "kind": "invalid-utf8",
+        "message": "JSON serialization error: [json.exception.type_error.316] incomplete UTF-8 string; last byte: 0xC3",
+        "origin": {
+          "user": {
+            "frames": [],
+            "field": {
+              "path": [
+                "project",
+                "summary"
+              ],
+              "at": {
+                "file": "projects/utf8/project.nix",
+                "line": 5,
+                "column": 5
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

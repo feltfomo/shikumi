@@ -1,0 +1,379 @@
+error[invalid]: `extensions.broken` must be a schema built from `shikumi.lib.types`
+  --> shikumi.nix:37:5
+   |
+37 |     broken = "not a schema";
+   |     ^^^^^^
+
+error[invalid]: `extensions.sneaky` must be a schema built from `shikumi.lib.types`
+  --> shikumi.nix:41:5
+   |
+41 |     sneaky = {
+   |     ^^^^^^
+
+error[unknown-option]: `owners` is not an option here
+  --> shikumi.nix:45:3
+   |
+45 |   owners = { };
+   |   ^^^^^^
+
+error[invalid]: `projects.outside` must be a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part
+  --> shikumi.nix:19:5
+   |
+19 |     outside = "../outside";
+   |     ^^^^^^^
+
+error[overlap]: `projects.overlap` lists `projects/dangling/inner`, which lies at or inside `projects/dangling`, the directory of `dangling`
+  --> shikumi.nix:15:5
+   |
+15 |     overlap = "projects/dangling/inner";
+   |     ^^^^^^^
+   = help: give every project a directory of its own
+note: `dangling` is listed here
+  --> shikumi.nix:14:5
+   |
+14 |     dangling = "projects/dangling";
+   |     ^^^^^^^^
+
+error[invalid]: `catalog.systems[1]` names `x86_64-nowhere`, which the pinned nixpkgs doesn't know as a system
+  --> shikumi.nix:48:5
+   |
+48 |     systems = [
+   |     ^^^^^^^
+   = help: name systems as nixpkgs does, such as `x86_64-linux` or `aarch64-darwin`
+
+error[second-overlay]: `overlays` is a second overlay: the repository's one overlay is the catalog's `overrides`
+  --> catalog/catalog.nix:24:3
+   |
+24 |   overlays = [ (_: _: { }) ];
+   |   ^^^^^^^^
+   = help: move each entry to the catalog's `overrides`, with a `reason` and a `release`
+note: the one overlay is here
+  --> catalog/catalog.nix:9:3
+   |
+ 9 |   overrides = {
+   |   ^^^^^^^^^
+
+error[missing]: `overrides.cowsay.release` is required but not defined
+  --> catalog/catalog.nix:19:5
+   |
+19 |     cowsay = {
+   |     ^^^^^^
+   = help: add `release = ...;`
+
+error[missing]: `overrides.hello.reason` is required but not defined
+  --> catalog/catalog.nix:15:5
+   |
+15 |     hello = {
+   |     ^^^^^
+   = help: add `reason = ...;`
+
+error[unknown-reference]: `packages.missing` names `no-such-package`, which is no package in the pinned nixpkgs on x86_64-linux
+ --> catalog/catalog.nix:7:5
+  |
+7 |     missing = "no-such-package";
+  |     ^^^^^^^
+  = help: name a package nixpkgs builds, or add one through the catalog's `overrides`
+
+error[no-declaration]: `projects.absent` lists `projects/absent`, which has no project.nix
+  --> shikumi.nix:18:5
+   |
+18 |     absent = "projects/absent";
+   |     ^^^^^^
+   = help: add `projects/absent/project.nix`, or take `absent` out of the manifest
+
+error[invalid]: `project.dependsOn[0]` must be an identifier: a lowercase letter, then lowercase letters, digits and hyphens
+ --> projects/bad-names/project.nix:6:5
+  |
+6 |     dependsOn = [ "Not Valid" ];
+  |     ^^^^^^^^^
+
+error[invalid]: `steps.Build` is not an identifier: a lowercase letter, then lowercase letters, digits and hyphens
+ --> projects/bad-names/project.nix:8:3
+  |
+8 |   steps.Build = {
+  |         ^^^^^
+
+error[enum]: `services.worker.restart` must be one of `never`, `on-failure`, `always`
+  --> projects/closed-enum/project.nix:10:5
+   |
+10 |     restart = "sometimes";
+   |     ^^^^^^^
+
+error[invalid]: `project.maintainers` must not be empty
+ --> projects/empty-list/project.nix:5:5
+  |
+5 |     maintainers = [ ];
+  |     ^^^^^^^^^^^
+
+error[invalid]: `extensions.layout.pages[0]` must be a non-blank pattern relative to the repository root, with no leading slash and no `..` part
+  --> projects/extensions/project.nix:12:5
+   |
+12 |     layout.pages = [ "../outside/*.md" ];
+   |            ^^^^^
+
+error[type]: `extensions.meta.logo` must be JSON data: a string, number, boolean, null, list or attribute set of them, not a path
+ --> projects/extensions/project.nix:9:5
+  |
+9 |     meta.logo = ./project.nix;
+  |          ^^^^
+
+error[unknown-option]: `extensions.nobody` is not an option here
+  --> projects/extensions/project.nix:10:5
+   |
+10 |     nobody = { };
+   |     ^^^^^^
+
+error[unknown-option]: `extensions.sneaky` is not an option here
+  --> projects/extensions/project.nix:11:5
+   |
+11 |     sneaky = "Kept at ${toString ./.}";
+   |     ^^^^^^
+
+error[invalid]: `extensions.team.owner` must be an identifier: a lowercase letter, then lowercase letters, digits and hyphens
+ --> projects/extensions/project.nix:8:5
+  |
+8 |     team.owner = "Not An Identifier";
+  |          ^^^^^
+
+error[store-reference]: `project.summary` refers to a store path, and the registry document carries none
+ --> projects/laundered/project.nix:8:5
+  |
+8 |     summary = "Copied to ${copied}";
+  |     ^^^^^^^
+
+error[location]: `extensions.meta` has a name that contains the location the repository is evaluated from, which changes with every edit to its Nix
+ --> projects/location/project.nix:7:3
+  |
+7 |   extensions.meta.${toString ./.} = "keyed by the checkout's location";
+  |              ^^^^
+
+error[location]: `project.summary` contains the location the repository is evaluated from, which changes with every edit to its Nix
+ --> projects/location/project.nix:4:5
+  |
+4 |     summary = "Lives at ${toString ./.}";
+  |     ^^^^^^^
+
+error[missing]: `project.summary` is required but not defined
+ --> projects/missing/project.nix:3:3
+  |
+3 |   project.maintainers = [ "someone" ];
+  |   ^^^^^^^
+  = help: add `summary = ...;`
+
+error[missing]: `steps.build.exec` is required but not defined
+ --> projects/missing/project.nix:4:3
+  |
+4 |   steps.build.description = "Has no command";
+  |         ^^^^^
+  = help: add `exec = ...;`
+
+error[not-a-declaration]: returns an attribute set, not a `shikumi.project` result
+ --> projects/no-factory/project.nix
+  = help: pass the record through the factory: `{ shikumi, ... }: shikumi.project { ... }`
+
+error[second-overlay]: `overrides` is a second overlay: the repository's one overlay is the catalog's `overrides`
+ --> projects/overlay/project.nix:7:3
+  |
+7 |   overrides.hello = {
+  |   ^^^^^^^^^
+  = help: move each entry to the catalog's `overrides`, with a `reason` and a `release`
+note: the one overlay is here
+ --> catalog/catalog.nix:9:3
+  |
+9 |   overrides = {
+  |   ^^^^^^^^^
+
+error[invalid]: `env.PATH` is the shell's path, which the packages its sources pick make
+ --> projects/path-variable/project.nix:8:3
+  |
+8 |   env.PATH = "/usr/bin";
+  |       ^^^^
+
+error[missing]: `commands.check.exec` is required but not defined
+ --> projects/split/project.nix:8:5
+  |
+8 |     commands = builtins.mapAttrs (_: description: { inherit description; }) {
+  |     ^^^^^^^^
+  = help: add `exec = ...;`
+
+error[invalid]: `steps.build.after[0]` must be an identifier: a lowercase letter, then lowercase letters, digits and hyphens
+ --> projects/split/steps.nix:6:5
+  |
+6 |     after = lib.optional true "Compile";
+  |     ^^^^^
+
+error[store-reference]: `project.summary` refers to a store path, and the registry document carries none
+  --> projects/store-reference/project.nix:11:5
+   |
+11 |     summary = "Built by ${built}";
+   |     ^^^^^^^
+
+error[unknown-option]: `project.owner` is not an option here
+ --> projects/unknown-options/project.nix:6:5
+  |
+6 |     owner = "someone";
+  |     ^^^^^
+
+error[unknown-option]: `steps.lint.cmd` is not an option here
+  --> projects/unknown-options/project.nix:12:5
+   |
+12 |     cmd = "lint";
+   |     ^^^
+
+error[unknown-option]: `tasks` is not an option here
+ --> projects/unknown-options/project.nix:8:3
+  |
+8 |   tasks.build = { };
+  |   ^^^^^
+
+error[type]: `commands.run.exec` must be a command line string, not a function
+  --> projects/wrong-type/project.nix:10:5
+   |
+10 |     exec = command: command;
+   |     ^^^^
+
+error[type]: `project.maintainers` must be a list, not a string
+ --> projects/wrong-type/project.nix:5:5
+  |
+5 |     maintainers = "someone";
+  |     ^^^^^^^^^^^
+
+error[type]: `steps` must be an attribute set, not a list
+ --> projects/wrong-type/project.nix:7:3
+  |
+7 |   steps = [ ];
+  |   ^^^^^
+
+error[unknown-reference]: `project.dependsOn[1]` names `nowhere`, which isn't a listed project
+ --> projects/dangling/project.nix:6:5
+  |
+6 |     dependsOn = [
+  |     ^^^^^^^^^
+  = help: list `nowhere` in the manifest, or take it out of `dependsOn`
+
+error[unknown-reference]: `steps.test.after[0]` names `build`, which isn't a step of `dangling`
+  --> projects/dangling/project.nix:14:5
+   |
+14 |     after = [ "build" ];
+   |     ^^^^^
+
+error[unknown-reference]: `project.imports.rust` imports `rust` from `jdk-owner`, which defines no toolchain `rust`
+ --> projects/jvm-app/project.nix:8:7
+  |
+8 |       rust = "jdk-owner";
+  |       ^^^^
+  = help: define it in `jdk-owner`'s `toolchains.rust`
+note: `jdk-owner`'s toolchains are here
+ --> projects/jdk-owner/project.nix:7:3
+  |
+7 |   toolchains.jdk = {
+  |   ^^^^^^^^^^
+
+error[unknown-reference]: `packages[1]` names `nowhere`, which isn't in the catalog
+ --> projects/picks/project.nix:7:3
+  |
+7 |   packages = [
+  |   ^^^^^^^^
+  = help: add `nowhere` to the catalog's `packages`
+note: the catalog's packages are here
+ --> catalog/catalog.nix:2:3
+  |
+2 |   packages = {
+  |   ^^^^^^^^
+
+error[unknown-reference]: `env.TOOL_HOME.package` names `elsewhere`, which isn't in the catalog
+  --> projects/picks/project.nix:11:3
+   |
+11 |   env.TOOL_HOME.package = "elsewhere";
+   |                 ^^^^^^^
+   = help: add `elsewhere` to the catalog's `packages`
+note: the catalog's packages are here
+  --> catalog/catalog.nix:2:3
+   |
+ 2 |   packages = {
+   |   ^^^^^^^^
+
+error[cycle]: `project.dependsOn[1]` makes a loop: `cycle-a` depends on `cycle-b`, which depends on `cycle-a`
+ --> projects/cycle-a/project.nix:6:5
+  |
+6 |     dependsOn = [
+  |     ^^^^^^^^^
+  = help: take one of these dependencies out, so the projects can be ordered
+note: `cycle-b` depends on `cycle-a` here
+ --> projects/cycle-b/project.nix:6:5
+  |
+6 |     dependsOn = [ "cycle-a" ];
+  |     ^^^^^^^^^
+
+error[cycle]: `steps.build.after[0]` makes a loop: `build` runs after `test`, which runs after `build`
+  --> projects/cycle-steps/project.nix:11:7
+   |
+11 |       after = [ "test" ];
+   |       ^^^^^
+   = help: take one of these out of `after`, so the steps can be ordered
+note: `test` runs after `build` here
+  --> projects/cycle-steps/project.nix:16:7
+   |
+16 |       after = [ "build" ];
+   |       ^^^^^
+
+error[duplicate]: `commands.fmt` is already declared by `duplicate-a`
+ --> projects/duplicate-b/project.nix:7:3
+  |
+7 |   commands.fmt = {
+  |            ^^^
+  = help: give each one a name of its own
+note: `duplicate-a` declares it here
+ --> projects/duplicate-a/project.nix:7:3
+  |
+7 |   commands.fmt = {
+  |            ^^^
+
+error[duplicate]: `services.db` is already declared by `duplicate-a`
+  --> projects/duplicate-b/project.nix:11:3
+   |
+11 |   services.db = {
+   |            ^^
+   = help: give each one a name of its own
+note: `duplicate-a` declares it here
+  --> projects/duplicate-a/project.nix:11:3
+   |
+11 |   services.db = {
+   |            ^^
+
+error[duplicate]: `toolchains.jdk` is already declared by `jdk-again`
+ --> projects/jdk-owner/project.nix:7:3
+  |
+7 |   toolchains.jdk = {
+  |              ^^^
+  = help: a toolchain has one owner; use `jdk-again`'s instead: `project.imports.jdk = "jdk-again";`
+note: `jdk-again` declares it here
+ --> projects/jdk-again/project.nix:7:3
+  |
+7 |   toolchains.jdk.description = "Another JDK";
+  |              ^^^
+
+error[duplicate]: `env.JAVA_HOME` is already defined by toolchain `jdk` of `jdk-owner`
+  --> projects/jvm-app/project.nix:12:3
+   |
+12 |   env.JAVA_HOME = "/opt/jdk";
+   |       ^^^^^^^^^
+   = help: define each variable once: a project and the toolchains it uses share one environment
+note: toolchain `jdk` of `jdk-owner` defines it here
+  --> projects/jdk-owner/project.nix:10:5
+   |
+10 |     env.JAVA_HOME = {
+   |         ^^^^^^^^^
+
+error[conflict]: `packages[0]` puts `openjdk-25.0.5.0.3+1` on the path, from catalog package `kotlin` through the propagated inputs of `kotlin-2.4.21`, where `openjdk-21.0.12.1+1` from catalog package `jdk` already is: two packages named `openjdk` on x86_64-linux
+  --> projects/jvm-app/project.nix:11:3
+   |
+11 |   packages = [ "kotlin" ];
+   |   ^^^^^^^^
+   = help: keep one of them on the path: pick packages that agree, or make them agree in the catalog's `overrides`
+note: toolchain `jdk` of `jdk-owner` puts `openjdk-21.0.12.1+1` on the path here
+  --> projects/jdk-owner/project.nix:9:5
+   |
+ 9 |     packages = [ "jdk" ];
+   |     ^^^^^^^^
+

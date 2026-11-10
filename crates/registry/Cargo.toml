@@ -1,0 +1,29 @@
+[package]
+name = "shikumi-registry"
+version = "0.1.0"
+description = "The registry document's contract, its producer and the read-only viewer"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+clap.workspace = true
+libc.workspace = true
+rayon.workspace = true
+schemars.workspace = true
+shikumi-contract.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+shikumi-derivation.workspace = true
+shikumi-lock.workspace = true
+unicode-width.workspace = true
+
+[dev-dependencies]
+fancy-regex.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,2 @@
+"mirror":"mirror/project.nix"
+symlink-overlap/mirror' (or its ancestor) is a symlink

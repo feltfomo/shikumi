@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use pulldown_cmark::{BrokenLink, Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{BrokenLink, Event, LinkType, Parser, Tag, TagEnd};
 
 use crate::{Finding, Position};
 
@@ -49,11 +49,7 @@ pub(crate) fn parse(path: &str, contents: &[u8]) -> Page {
         }
         None
     };
-    let options = Options::ENABLE_TABLES
-        | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TASKLISTS;
-    let parser = Parser::new_with_broken_link_callback(text, options, Some(&mut on_broken));
+    let parser = Parser::new_with_broken_link_callback(text, crate::MARKDOWN, Some(&mut on_broken));
 
     let mut slugs = Slugger::default();
     let mut heading: Option<String> = None;

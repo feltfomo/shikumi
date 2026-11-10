@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shikumi.lock",
+  "description": "`lock.json`: the contract's name and version.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "$ref": "#/$defs/LockName"
+    },
+    "version": {
+      "$ref": "#/$defs/LockVersion"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version"
+  ],
+  "$defs": {
+    "LockName": {
+      "const": "shikumi.lock"
+    },
+    "LockVersion": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ]
+    }
+  }
+}

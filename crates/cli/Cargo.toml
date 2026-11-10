@@ -1,0 +1,21 @@
+[package]
+name = "shikumi"
+version = "0.1.0"
+description = "The shikumi command: argument parsing and the list of subcommands"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "shikumi"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+shikumi-lock.workspace = true
+shikumi-registry.workspace = true
+
+[lints]
+workspace = true
