@@ -14,4 +14,6 @@ pub use address::{ContentAddress, FixedHash, Ingestion, References, SelfReferenc
 pub use derivation::{Derivation, DerivationError, OutputName, Outputs, StoreDerivation};
 pub use hash::{HashParseError, Sha256};
 pub use nar::{Nar, NarError, NarNode};
-pub use path::{HASH_PART_LEN, PathError, StoreDir, StoreName, StorePath};
+pub use path::{
+    HASH_PART_LEN, HASH_PART_PATTERN, PathError, StoreDir, StoreName, StorePath, is_hash_part,
+};

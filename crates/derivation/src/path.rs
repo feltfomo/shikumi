@@ -7,6 +7,19 @@ use crate::base32;
 /// length of a store path's hash part: a 160-bit digest in nix base-32.
 pub const HASH_PART_LEN: usize = 32;
 
+/// a store path's hash part as a regular expression, for a schema to publish beside
+/// `is_hash_part`.
+pub const HASH_PART_PATTERN: &str = "[0123456789abcdfghijklmnpqrsvwxyz]{32}";
+
+/// whether `text` starts the way a store path's last component does: a hash part, then a `-` and a
+/// name, or nothing.
+pub fn is_hash_part(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() >= HASH_PART_LEN
+        && bytes[..HASH_PART_LEN].iter().all(|&c| base32::is_digit(c))
+        && bytes.get(HASH_PART_LEN).is_none_or(|&b| b == b'-')
+}
+
 /// `StorePath::MaxPathLen` in CppNix 2.35.3 and `StorePath::MAX_PATH_LEN` in Lix 2.95.4.
 const MAX_NAME_LEN: usize = 211;
 
@@ -212,6 +225,29 @@ impl std::error::Error for PathError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // the pattern a schema publishes and the predicate say the same of every hash part, the
+    // alphabet's letters and the four it leaves out included.
+    #[test]
+    fn the_hash_part_pattern_is_the_predicate() {
+        let pattern = format!("^{HASH_PART_PATTERN}(-.*)?$");
+        let alphabet = std::str::from_utf8(crate::base32::ALPHABET).unwrap();
+        assert!(HASH_PART_PATTERN.contains(alphabet));
+        for sample in [
+            "0123456789abcdfghijklmnpqrsvwxyz-name".to_owned(),
+            "0123456789abcdfghijklmnpqrsvwxyz".to_owned(),
+            "0123456789abcdefghijklmnpqrsvwxy-name".to_owned(),
+            "short-name".to_owned(),
+            "0123456789abcdfghijklmnpqrsvwxyzname".to_owned(),
+        ] {
+            let matches = sample.len() >= HASH_PART_LEN
+                && sample[..HASH_PART_LEN]
+                    .chars()
+                    .all(|c| alphabet.contains(c))
+                && (sample.len() == HASH_PART_LEN || sample.as_bytes()[HASH_PART_LEN] == b'-');
+            assert_eq!(is_hash_part(&sample), matches, "{sample} against {pattern}");
+        }
+    }
 
     #[test]
     fn names_follow_the_shared_character_rules() {
