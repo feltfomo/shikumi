@@ -57,8 +57,8 @@
 # catalog's package to a store path without building it, and a control build of the same entry
 # writes exactly that path.
 #
-# `window` holds the private store's copies against a collection, in a cache of its own; it says
-# what it holds where it's defined.
+# `window`, `placed` and `unregistered` hold the private store's copies, each in a cache of its own;
+# each says what it holds where it's defined.
 #
 # `jq` reads the JSON and `taskset` limits a run to one core.
 set -euo pipefail
@@ -73,7 +73,7 @@ nixpkgs_hash=$7
 out=$8
 shift 8
 steps=("$@")
-[ "${#steps[@]}" -gt 0 ] || steps=(fixtures window failures planted)
+[ "${#steps[@]}" -gt 0 ] || steps=(fixtures window placed unregistered failures planted)
 
 [ -x /bin/sh ] || {
   echo "the sandbox has no /bin/sh for the control builds" >&2
@@ -212,6 +212,79 @@ WRAPPER
     return 1
   fi
   echo "no collection between a run's roots and its copies landing: the tracked serialized declarations"
+}
+
+# keyed copies are placed by the producer, not copied by an evaluator: an evaluator that writes down
+# every copying run's sources, run over the basic fixture from cold and then again after an edit.
+# no copying run may read a staged keyed tree; the layer and nixpkgs are what one copies, once a
+# store.
+step_placed() {
+  local sources=$TMPDIR/placed-sources repo=$TMPDIR/placed-repo pass
+  wrapped "$TMPDIR/placed-bin" <<WRAPPER
+#!/bin/sh
+copying=
+for argument in "\$@"; do
+  [ "\$argument" = --read-write-mode ] && copying=1
+done
+if [ -n "\$copying" ]; then
+  for argument in "\$@"; do
+    case "\$argument" in
+      shikumi-copy-*) echo "\$argument" >> "$sources" ;;
+    esac
+  done
+fi
+exec $real_bin/nix-instantiate "\$@"
+WRAPPER
+  repository "$fixtures/basic" "$repo"
+  : > "$sources"
+  for pass in cold edited; do
+    if [ "$pass" = edited ]; then
+      printf '# edited\n' >> "$repo/apps/web/project.nix"
+      repository_git "$repo" commit -qam edited
+    fi
+    XDG_CACHE_HOME=$TMPDIR/placed-cache PATH=$TMPDIR/placed-bin:$PATH shikumi registry declarations \
+      --root "$repo" > "$out/placed.$pass.raw" 2> "$out/placed.$pass.stderr" || {
+      echo "a run whose evaluator writes down its copies failed:" >&2
+      cat "$out/placed.$pass.stderr" >&2
+      return 1
+    }
+  done
+  if "$grep_bin" -q -- "/stage-" "$sources"; then
+    echo "a copying evaluation read a staged keyed tree:" >&2
+    cat "$sources" >&2
+    return 1
+  fi
+  sed -E "$copies" "$out/placed.cold.raw" | diff -u "$references/basic/declarations.json" - || {
+    echo "a run that places its keyed copies gave other declarations" >&2
+    return 1
+  }
+  echo "keyed copies placed by the producer, none copied by an evaluator: the tracked serialized declarations"
+}
+
+# a keyed copy's path that's on disk but not valid in the private store's database, as an
+# interrupted collection or a cleaned state directory leaves it, holding a tree other than the
+# copy's. the copies' paths come from a run in a cache of its own; in a second cache, each is
+# planted before anything runs there, every file of it a throw. the producer has to write the copy
+# again rather than trust what's there, so the basic fixture comes out as its reference has it.
+step_unregistered() {
+  local first=$TMPDIR/unregistered-first second=$TMPDIR/unregistered-cache copy file planted_copy
+  local count=0
+  reference_run unregistered.first env XDG_CACHE_HOME="$first"
+  for copy in "$first"/shikumi/*/stores/*/nix/store/*-"$keyed"; do
+    [ -d "$copy" ] || continue
+    planted_copy=$second/${copy#"$first"/}
+    while read -r file; do
+      mkdir -p "$(dirname "$planted_copy/$file")"
+      echo 'throw "a tree the store does not hold was trusted"' > "$planted_copy/$file"
+    done < <(cd "$copy" && find . -type f)
+    count=$((count + 1))
+  done
+  [ "$count" -gt 0 ] || {
+    echo "the first run left no keyed copy to plant" >&2
+    return 1
+  }
+  reference_run unregistered env XDG_CACHE_HOME="$second"
+  echo "$count unregistered trees at keyed copies' paths, none trusted: the tracked serialized declarations"
 }
 
 # what's compared of a failure: everything Shikumi read from it but the evaluator's own words and

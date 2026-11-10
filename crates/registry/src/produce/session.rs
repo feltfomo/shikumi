@@ -27,7 +27,7 @@ use crate::context::stat::{Fresh, Seen, StatCache};
 use crate::context::tree::{self, Nar};
 use crate::context::{
     Cache, CacheError, DocumentKey, Fact, Identity, Key, Part, Registered, Root, Scratch,
-    store_directory,
+    remove_tree, store_directory,
 };
 use crate::contract::RelativePath;
 use crate::declarations::{Catalog, Declarations, Evaluated, Failed, Failure};
@@ -635,35 +635,81 @@ impl<'p> Session<'p> {
                 nixpkgs: self.nixpkgs_wanted()?,
             }),
         };
-        // each part's staged tree, which the copying evaluation reads, until it has copied them.
         let mut staged = Vec::with_capacity(N);
-        let mut keyed = Vec::with_capacity(N);
         for part in parts {
             let (scratch, nar) = self.stage(part)?;
-            keyed.push(Wanted {
-                source: scratch.path().to_owned(),
-                name: STORE_NAMES.keyed,
-                copied: self.copied(STORE_NAMES.keyed, nar)?,
-            });
-            staged.push(scratch);
+            let copied = self.copied(STORE_NAMES.keyed, nar)?;
+            staged.push((scratch, copied));
         }
-        let wanted: Vec<&Wanted> = stock
-            .iter()
-            .flat_map(|stock| [&stock.layer, &stock.nixpkgs])
-            .chain(&keyed)
-            .collect();
-        self.copy_into_store(&wanted)?;
-        drop(staged);
+        if let Some(stock) = &stock {
+            self.copy_into_store(&[&stock.layer, &stock.nixpkgs])?;
+        }
+        self.place(&staged)?;
         if let Some(Stock { layer, nixpkgs }) = stock {
             self.stocked = Some(Stocked {
                 layer: layer.copied,
                 nixpkgs: self.stocked_nixpkgs(nixpkgs.copied.path)?,
             });
         }
-        let copies: Vec<Copied> = keyed.into_iter().map(|wanted| wanted.copied).collect();
+        let copies: Vec<Copied> = staged.into_iter().map(|(_, copied)| copied).collect();
         Ok(copies
             .try_into()
             .expect("staging makes one copy of each part"))
+    }
+
+    /// puts each staged keyed copy in the private store and registers it there, as a copying
+    /// evaluation would leave it. the staged tree is the copy, hashed already from the bytes
+    /// staging read, so having an evaluation read, hash and write every file again is work the
+    /// run would wait on for nothing: the tree is made canonical and renamed into place, each part
+    /// on Rayon's pool, and the store's database loads every registration at once. runs placing
+    /// the same path take turns under its copy lock.
+    ///
+    /// a path counts as there only when the store's database holds it as valid. a tree on disk at
+    /// one it doesn't is what an interrupted collection or a cleaned database leaves, and a valid
+    /// path is never hashed again, so registering it would have evaluation trust whatever it
+    /// holds. such a tree is deleted and the copy placed, as Nix's own add deletes it (cppnix
+    /// 2.35.3 libstore/local-store.cc:1266-1278, determinate 3.24.2 1562-1577, lix 2.95.4
+    /// 1302-1313, lix 2.96.0 1312-1323).
+    fn place(&self, staged: &[(Scratch, Copied)]) -> Result<(), ProduceError> {
+        if staged.is_empty() {
+            return Ok(());
+        }
+        let paths: Vec<&str> = staged
+            .iter()
+            .map(|(_, copied)| copied.path.as_str())
+            .collect();
+        let _copying = self.cache.copying(&paths)?;
+        let nix_store = self.identity.nix_store();
+        let invalid = self.cache.invalid(&nix_store, &paths)?;
+        let placing: Vec<&(Scratch, Copied)> = staged
+            .iter()
+            .filter(|(_, copied)| invalid.contains(&copied.path))
+            .collect();
+        let directory = store_directory(self.cache.store());
+        placing.par_iter().try_for_each(|(scratch, copied)| {
+            let name = Path::new(&copied.path)
+                .file_name()
+                .expect("a store path has a name");
+            let target = directory.join(name);
+            if std::fs::symlink_metadata(&target).is_ok() {
+                remove_tree(&target).map_err(self.writing("deleting an unregistered", &target))?;
+            }
+            // a directory moves to another parent only while it's writable, since its `..`
+            // changes; so what it holds is made canonical first, and the directory itself once
+            // it's in place.
+            within(scratch.path(), canonical).map_err(self.writing("placing", scratch.path()))?;
+            std::fs::rename(scratch.path(), &target).map_err(self.writing("placing", &target))?;
+            canonical(&target).map_err(self.writing("placing", &target))
+        })?;
+        let registered: Vec<Registered> = placing
+            .iter()
+            .map(|(_, copied)| Registered {
+                path: copied.path.clone(),
+                nar: copied.nar,
+            })
+            .collect();
+        self.cache.register(&nix_store, &registered)?;
+        Ok(())
     }
 
     /// what a failed write into Shikumi's cache was: the cache's disk out of space, or otherwise the
@@ -922,6 +968,36 @@ struct Stock {
     nixpkgs: Wanted,
 }
 
+/// `entry` as Nix leaves an entry of a store copy: not writable, executable where its owner could
+/// execute it or it's a directory, and its mtime one second after the epoch (cppnix 2.35.3
+/// src/libstore/posix-fs-canonicalise.cc:13-34, determinate 3.24.2 13-34, lix 2.95.4
+/// lix/libstore/local-store.cc:465-502, lix 2.96.0 475-512).
+fn canonical(entry: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata = std::fs::symlink_metadata(entry)?;
+    let mode = if metadata.is_dir() || metadata.permissions().mode() & 0o100 != 0 {
+        0o555
+    } else {
+        0o444
+    };
+    std::fs::File::open(entry)?
+        .set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1))?;
+    std::fs::set_permissions(entry, std::fs::Permissions::from_mode(mode))
+}
+
+/// `apply` to everything under `directory`, each directory after what it holds, which a read-only
+/// directory would refuse otherwise.
+fn within(directory: &Path, apply: fn(&Path) -> io::Result<()>) -> io::Result<()> {
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            within(&entry.path(), apply)?;
+        }
+        apply(&entry.path())?;
+    }
+    Ok(())
+}
+
 /// the evaluator's text with the private store's real location written as the store directory it
 /// stands for, which is how every other path in it is printed, and anything else under Shikumi's
 /// cache directory named as that, so no finding carries where this machine keeps it.
@@ -1112,5 +1188,33 @@ mod tests {
     fn replacing_writes_every_occurrence() {
         assert_eq!(replaced(b"a/t/x a/t/y", b"a/t", b"s"), b"s/x s/y");
         assert_eq!(replaced(b"none", b"a/t", b"s"), b"none");
+    }
+
+    // a placed tree is a store copy's: nothing writable, every mtime Nix's, executables still
+    // executable, and the directory itself last, once it's in place.
+    #[test]
+    fn a_placed_tree_is_canonical_throughout() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let base = tempfile::tempdir().unwrap();
+        let tree = base.path().join("tree");
+        std::fs::create_dir_all(tree.join("a/b")).unwrap();
+        std::fs::write(tree.join("a/b/c.nix"), "1").unwrap();
+        std::fs::write(tree.join("x.sh"), "2").unwrap();
+        std::fs::set_permissions(tree.join("x.sh"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        within(&tree, canonical).unwrap();
+        canonical(&tree).unwrap();
+        for (path, mode) in [
+            ("", 0o555),
+            ("a", 0o555),
+            ("a/b", 0o555),
+            ("a/b/c.nix", 0o444),
+            ("x.sh", 0o555),
+        ] {
+            let metadata = std::fs::symlink_metadata(tree.join(path)).unwrap();
+            assert_eq!(metadata.mode() & 0o777, mode, "{path}");
+            assert_eq!(metadata.mtime(), 1, "{path}");
+        }
+        remove_tree(&tree).unwrap();
     }
 }

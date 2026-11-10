@@ -354,6 +354,44 @@ impl Cache {
         Ok((scratch, url))
     }
 
+    /// registers `registered`, copies already in the private store, in its own database, as valid
+    /// paths, so a later run's copying evaluation and every collection see them as Nix's own.
+    pub(crate) fn register(
+        &self,
+        nix_store: &Path,
+        registered: &[Registered],
+    ) -> Result<(), CacheError> {
+        self.load(nix_store, &self.store_url(None), registered)
+    }
+
+    /// which of `paths` the private store's own database doesn't hold as valid. a tree on disk at
+    /// such a path is what an interrupted collection, or a database cleaned away, leaves, and
+    /// nothing says it holds the copy.
+    pub(crate) fn invalid(
+        &self,
+        nix_store: &Path,
+        paths: &[&str],
+    ) -> Result<BTreeSet<String>, CacheError> {
+        let output = self
+            .command(nix_store)
+            .arg("--store")
+            .arg(self.store_url(None))
+            .args(["--check-validity", "--print-invalid"])
+            .args(paths)
+            .output()
+            .map_err(io_at("running", nix_store))?;
+        if !output.status.success() {
+            return Err(CacheError::Store {
+                action: "asking which copies are valid in",
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            });
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect())
+    }
+
     /// loads `registered` into the database of the store at `url` as a database dump, which
     /// registers each path without reading it, since none is a derivation (cppnix 2.35.3
     /// src/nix/nix-store/nix-store.cc:571-615 and src/libstore/local-store.cc:730-731, determinate
@@ -717,7 +755,7 @@ impl Drop for Root {
 }
 
 /// removes a tree Shikumi made, the read-only directories a store copy has included, or a file.
-fn remove_tree(path: &Path) -> io::Result<()> {
+pub(crate) fn remove_tree(path: &Path) -> io::Result<()> {
     let metadata = std::fs::symlink_metadata(path)?;
     if metadata.is_dir() {
         std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700))?;

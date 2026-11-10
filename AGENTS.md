@@ -84,7 +84,9 @@ output for the current system:
   tracked reference has them, every project evaluated beside the others on one core matches it
   focused on alone, and a fault planted in a copy of the layer comes back as a Shikumi bug. The
   basic fixture also comes out as its reference has it with a collection trying to start between
-  a run's roots and its copies landing. These steps run side by side. The findings as that
+  a run's roots and its copies landing, with keyed copies placed rather than copied by an
+  evaluator, and with an unregistered tree planted at each keyed copy's path. These steps run side
+  by side. The findings as that
   implementation renders them are kept in the result, and fail the check if they name Shikumi's own
   files or a store path. The document and the rendered findings those declarations give are held by
   the registry crate's tests. Defined, with the next two, in `nix/declarations-checks.nix`, and run

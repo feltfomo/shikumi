@@ -289,7 +289,7 @@ how it evaluates. A hit skips the evaluator.
   inside a listed project's directory or the catalog's. A file Git doesn't track, a symlink and
   anything behind one are left out. Each part is staged in a directory holding exactly its keyed
   files, as they were hashed, and a marker file whose value is the copy's root as a path, then
-  copied into a private store under Shikumi's cache directory, which holds only such copies, the
+  put in a private store under Shikumi's cache directory, which holds only such copies, the
   layer and the locked nixpkgs. Each evaluation opens that store under a database of its own,
   loaded with `nix-store --load-db` and registering only its own copies, the layer and the locked
   nixpkgs, so every other path in the store is invalid to it. The evaluator enters each copy by
@@ -348,6 +348,16 @@ how it evaluates. A hit skips the evaluator.
   to be renamed into place are named for the process that made them, and maintenance removes those
   whose process is gone. A store no run has used for 30 days goes with its pins, its state and its
   twin, and a store with no mark yet, one another run has only just made, is kept.
+- **Keyed copies are placed, not copied.** The staged tree of a part is its copy, already hashed
+  from the bytes staging read. The producer makes it read-only with Nix's canonical mtime, renames
+  it into the store, each part on Rayon's pool, and loads every registration into the store's
+  database at once with `nix-store --load-db`, as each evaluation's own database is loaded. An
+  evaluator copying it would read, hash and write every file again on one core while the miss
+  waits. A path counts as there only when the store's database holds it as valid, since a valid
+  path is never hashed again: a tree on disk at a path the database doesn't hold, which an
+  interrupted collection or a cleaned database leaves, is deleted and the copy placed, as Nix's own
+  add does. The layer and the locked nixpkgs are copied by an evaluation, which finds them already
+  there after a store's first run.
 - **Where the store's state lives.** Its database, roots and collection lock are under its own
   `nix/var/nix`, unless that would put the socket a copy hands its temporary root to past 104
   bytes, the most a socket address holds on macOS (108 on Linux): Lix 2.95 reaches a longer one
