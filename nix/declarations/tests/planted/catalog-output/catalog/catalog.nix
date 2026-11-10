@@ -2,7 +2,7 @@
 # as a declaration: an overlay entry whose reason reads a build's output.
 _:
 let
-  built = import ../../built.nix "echo planted > $out";
+  built = import ./built.nix "echo planted > $out";
 in
 {
   overrides.hello = {

@@ -4,14 +4,15 @@ This page says how Shikumi is put together: who owns what, how a build and a she
 which invariants hold. [The capability page](../reference/capabilities.md) says what Shikumi provides.
 
 Everything here is an accepted target unless it says it's current, and the sections marked **open**
-are mechanisms still being chosen, each with what decides it. Three parts are current: the
+are mechanisms still being chosen, each with what decides it. Four parts are current: the
 repository's foundation (the gate, its checks in `tools/repo-check/`, and
 [the benchmark harness](#the-benchmark-harness)); the base the core builds on (the path computation
 of [derivation synthesis](#derivation-synthesis), both implementations of
 [the store transport](#store-transport), and the re-addressing and rooting that
-[early cutoff](#early-cutoff) and [roots](#caches-and-roots) rest on); and
-[the declaration layer](#the-declaration-layer)'s composition, catalog, checker and registry
-document.
+[early cutoff](#early-cutoff) and [roots](#caches-and-roots) rest on);
+[the declaration layer](#the-declaration-layer)'s composition, catalog, checker, registry document
+and toolchain context; and [the context cache](#context-cache) and [the lock](#lock) they're
+evaluated through.
 
 ## Shape
 
@@ -43,19 +44,19 @@ daemon, runs the host's evaluator, and drives unmodified compilers.
 The declaration layer turns a repository's project declarations into the registry document, which
 the core reads, and into the toolchain context and shell environments. Its Nix half, `shikumi.lib` in
 `nix/declarations/`, reads and serializes; its Rust half, the checker in `crates/registry/`, judges.
-Composition, the catalog's reading of the pinned nixpkgs, serialization, the checker, the module
-adapter and the registry document are current. The toolchain context and shell environments are
-targets.
+Composition, the catalog's reading of the locked nixpkgs, serialization, the checker, the module
+adapter, the registry document and the toolchain context are current. Shell environments are a
+target.
 
 ```mermaid
 graph LR
   manifest["shikumi.nix<br/>manifest"] --> compose["compose.nix<br/>plan and read"]
   decl["project.nix<br/>shikumi.project { … }"] --> compose
   catalogfile["catalog/catalog.nix<br/>packages, overrides"] --> catalog["catalog.nix<br/>one package set per system"]
-  nixpkgs["pinned nixpkgs"] --> catalog
+  nixpkgs["locked nixpkgs"] --> catalog
   compose --> serialize["serialize.nix<br/>values and positions"]
   catalog --> serialize
-  produce["shikumi-registry<br/>producer"] -->|"one plan, then batches,<br/>nix-instantiate, dummy://"| compose
+  produce["shikumi-registry<br/>producer"] -->|"one plan, then batches,<br/>pure, from the keyed copy"| compose
   produce -->|"one evaluation<br/>per system"| catalog
   serialize -->|"shikumi.evaluation<br/>or an error"| produce
   produce -->|"shikumi.declarations,<br/>failures included"| checker["checker<br/>(Rust)"]
@@ -68,8 +69,11 @@ graph LR
   changes nothing else. `vocabulary.nix` owns `shikumi.lib.types`, whose constructors only build
   data. `serialize.nix` owns turning any value into a tagged tree with source positions.
   `compose.nix` owns the manifest and which declaration and catalog files a composition reads.
-  `catalog.nix` owns the one package set: importing the pinned nixpkgs for a system with the
-  catalog's overlay, and what evaluation can see of each package the catalog names. `call.nix` owns
+  `catalog.nix` owns the one package set: importing the locked nixpkgs for a system with the
+  catalog's overlay, what evaluation can see of each package the catalog names, and the toolchain
+  context. `layer.nix` wires the layer together once, for `default.nix`, which hands `shikumi.lib`
+  to whoever imports the layer, and for `produce.nix`, which alone asks for the toolchain context.
+  `call.nix` owns
   calling a file with the arguments it names. `forced.nix` owns the frame around every first forcing
   of a user's value. `produce.nix` owns the requests the
   producer can make and the frame that names a project in the evaluator's trace. `modules.nix` owns
@@ -82,15 +86,36 @@ graph LR
   file the layer reads, the arguments it's offered, the fields read by name and the frames in a
   trace, written to `layer.json`, which the layer's Nix reads. `render.rs` owns the text form of
   findings, `failure.rs` owns reading an evaluator's error, the one place an evaluator's text is
-  parsed, `evaluation.rs` owns the contract of each evaluation's answer, `produce.rs` owns the
-  producer, which projects a composition holds and how they're evaluated, and `view.rs` owns the
-  viewer. The `shikumi` crate in `crates/cli/` only parses arguments and lists subcommands.
+  parsed, `evaluation.rs` owns the contract of each evaluation's answer, `produce/` owns the
+  producer, which projects a composition holds and how they're evaluated, and the one function that
+  builds every evaluation's command line, `context/` owns [the context cache](#context-cache),
+  `toolchain.rs` owns the toolchain context's contract, and `view.rs` owns the viewer. The
+  `shikumi-lock` crate owns [the lock](#lock), and the `shikumi-contract` crate the machinery every
+  contract is written with: its name and version fields, checked strings, closed sets of names and
+  the canonical JSON rendering. The `shikumi` crate in `crates/cli/` only parses arguments and lists
+  subcommands.
 - **Entry point.** `shikumi.lib` takes the nixpkgs source tree from whoever imports it.
   `shikumi.lib.compose { root; manifest; }` is pure: it gives the serialized manifest, each listed
   project's declaration file, the catalog's file and systems, and `read`, which serializes one
   project from its file without reading the manifest again, so a caller can evaluate each project
   apart. `shikumi.lib.catalog root { file; system; }` reads the catalog for one system. nix-unit
   tests call both directly, with no CLI.
+- **One scope for everything a declaration reaches.** `scope.nix` owns what every user file is
+  evaluated with: each declaration, manifest and catalog file, every file one of them imports, and
+  nixpkgs, whose `lib` and package set a user file is handed and whose own importers take a user's
+  path. Its `builtins` lacks those the layer table withholds: every builtin that reaches a fetcher,
+  `getFlake`, `fetchTree`, `fetchGit`, `fetchTarball`, `fetchurl`, `fetchMercurial` and
+  `fetchClosure`, whatever pure and restricted mode would make of a call, since Determinate Nix
+  lets `getFlake` read any flake, commit or directory on the machine. Its `findFile`, which nixpkgs
+  needs for `<nix/fetchurl.nix>`, refuses a lookup-path entry that names a scheme, which reaches
+  the same fetchers; `<...>` and a declaration's own `__nixPath` go through it. Its `import`,
+  `scopedImport` and `builtins` keep a file they reach in the scope, and the global names an
+  evaluator gives a withheld builtin are shadowed, since a scope can add names but not take them
+  away. `scopedImport` evaluates a file again on every import, and nixpkgs
+  imports many of its files more than once, so a file under nixpkgs or the repository's copy goes
+  through a lazy mirror of its tree, one `readDir` per directory and one value per file, which keeps
+  what the evaluator's own import cache would: on a nixpkgs evaluation it costs a few percent, where
+  a scope without it costs half again as much time and memory.
 - **Plain records, no module system.** `shikumi.project` takes a plain attribute set, a flat set of
   small records, and returns it marked as a declaration and otherwise unchanged, so the source
   position of every attribute survives to serialization. There's no fixpoint, no merge order and no
@@ -132,20 +157,22 @@ graph LR
   `Registry::try_from` is the only way the Rust side gets a registry, and it refuses a document with
   a diagnostic, an unknown field or another version. Every Rust entry point goes through it, so each
   refuses the same declarations.
-- **Producing.** The producer runs the host's `nix-instantiate` on `produce.nix` once to plan the
-  composition, which reads the manifest and names each project's declaration file and reads no
-  declaration, then evaluates the projects in batches, at least four for each core the process may
-  use and none of more than 64 projects, as many at once as it has cores. Each answer is read
-  through its schema on Rayon's pool as it arrives, and the assembled declarations go to the
-  checker. One function builds every evaluation's command line: the `dummy://` store, which holds
-  nothing and accepts nothing; import-from-derivation, `builtins.exec`, plugins and experimental
-  features off; `nix-path` set empty; every frame of the trace in the plain format; no environment
-  at all, and `/` as the working directory. Every read of a build output through the evaluator fails
-  there, whatever the host's store holds, and nothing in the caller's environment, such as `PWD`,
-  reaches a declaration. An empty `nix-path` empties the search path on Lix only: CppNix and
-  Determinate Nix always add root's channels to it unless evaluation is restricted or pure, so a
-  declaration there can read `<nixpkgs>` or `<nixos>` from the host, the known gap under
-  [Invariants](#invariants). It needs no daemon and no experimental feature on any implementation.
+- **Producing.** The producer evaluates through [the context cache](#context-cache), in three
+  parts, each under its own key: the plan, the catalog for each system, and the projects. A part
+  the cache holds isn't evaluated. For a part that misses, the producer copies its keyed files into
+  a private store and runs the host's `nix-instantiate` on `produce.nix` in pure mode: once to plan
+  the composition, which reads the manifest, names each project's declaration file and reads no
+  declaration, then the projects in batches, at least four for each core the process may use and
+  none of more than 64 projects, as many at once as it has cores. Each answer is read through its
+  schema on Rayon's pool as it arrives, and the assembled declarations go to the checker. One
+  function builds every evaluation's command line: pure and restricted evaluation; the private
+  store as the store evaluation reads and `dummy://` as the one it would build in;
+  import-from-derivation, `builtins.exec`, plugins and experimental features off; `nix-path` empty;
+  no configuration file; every frame of the trace in the plain format; no environment beyond the
+  evaluator's own cache and temporary directories, and `/` as the working directory. So a
+  declaration reads its keyed files, the locked nixpkgs and nothing else, and every read of a build
+  output fails, since the `.drv` it would come from isn't in the store evaluation reads. It needs no
+  daemon and no experimental feature on any implementation.
 - **Isolation.** A batch that fails names its project in the trace, by the frame `produce.nix` puts
   around every evaluation of a declaration. That project gets the failure, and the projects before
   and after it are evaluated again, without it, in batches of their own. A failure no frame names,
@@ -159,15 +186,18 @@ graph LR
   started and reaped by one of the run's scoped threads, no evaluation starts after an error, and
   Ctrl-C reaches them through the terminal's process group. A `shikumi` killed any other way leaves
   its running evaluators to finish their batch, at most 64 declarations, or their package set, and
-  exit, or, for a declaration that never terminates, to run until they're killed too.
+  exit, or, for a declaration that never terminates, to run until they're killed too. Tying each
+  evaluator to its parent's death would take a hook run between fork and exec, which makes the
+  standard library fork the whole process rather than spawn the child: at 10000 projects that cost
+  2.4 s of CPU and 0.6 s of wall time per run.
 - **The catalog.** The repository's catalog is the one place its packages come from, and neither it
   nor any declaration touches a package set: the catalog names each package by its attribute path in
-  the pinned nixpkgs, and a project picks packages by catalog name. So a package that differs from
+  the locked nixpkgs, and a project picks packages by catalog name. So a package that differs from
   nixpkgs' comes only from the catalog's overlay, where each entry carries its reason and release,
   and a batch of declarations evaluates no nixpkgs and costs what it does without a catalog. The catalog's directory and systems are the
   manifest's to say, so the system never comes from the host, and the plan names the catalog's file.
   The producer then evaluates the catalog once for each system, as evaluations of their own at the
-  front of the first round's queue, beside the projects' batches. Each imports the pinned nixpkgs for
+  front of the first round's queue, beside the projects' batches. Each imports the locked nixpkgs for
   that system with the catalog's `overrides` as its one overlay and an explicit empty `config`, so
   no configuration or overlay of the host's is read, and the evaluator's empty environment keeps
   nixpkgs' `NIXPKGS_ALLOW_*` variables out too. It resolves each entry's path there, and a path that
@@ -192,14 +222,18 @@ graph LR
   precedence between a project's and a toolchain's and `PATH` reserved to the shell, and walks each
   system's propagation graph breadth first from every pick, keeping the first package under each
   name, a `pname` or a `mainProgram` alike, and refusing a different one.
-- **Toolchain context.** The store paths and settings a backend needs to write `.drv` files: compiler,
-  linker and builder paths, base environment, system and flags. It's small and changes only when the
-  lock or a declaration changes. It reads the packages it needs from the catalog by name, through
-  `catalog.nix`, and resolves them to store paths there, which is the one step that forces a
-  package's `outPath`. Accepted target.
-- **No builds during evaluation.** Nothing in the layer forces a derivation output, and a declaration
-  that reads one through the evaluator is refused. A read by a plain path with no store context isn't
-  refused; that's the known gap under [Invariants](#invariants).
+- **Toolchain context.** The store paths a backend or a shell needs from the catalog: each catalog
+  entry's package, for each system the manifest names, as the store path of its output, through the
+  same `pkgs` and overlay the catalog's read uses. It's the one step that forces a package's
+  `outPath`, which computes the derivation's paths without writing the `.drv`, building it or
+  reading anything a build writes, since evaluation runs read-only. A package nixpkgs refuses to
+  evaluate, for its licence or a known vulnerability, has no path. It's evaluated apart from the
+  catalog's read, so such a package can't fail the read, and it's never part of the registry
+  document. [The context cache](#context-cache) keeps it per system, keyed by the catalog's
+  directory. It's the `shikumi.toolchain-context` record, version 1, unpublished while what its
+  readers need, compiler, linker and builder paths, base environment and flags, is settled.
+- **No builds during evaluation.** Nothing in the layer builds or reads a derivation output, and a
+  declaration that reads one through the evaluator is refused, with or without its string context.
 - **Cost.** Composition and checking are linear in the size of the declarations. Global composition
   imports and serializes each declaration once, one visit per value and one position lookup per
   attribute, after counting each top-level field up to a budget of 100000 values and 32 levels, so a
@@ -246,24 +280,128 @@ process exits.
 
 ### Context cache
 
-The core evaluates the toolchain context through the host's Nix CLI and caches the result.
+Current. The producer keeps what each part of a composition evaluated to, and the toolchain
+context, under a key that covers everything the evaluation could read and everything that changes
+how it evaluates. A hit skips the evaluator.
 
-- **The evaluation can read only what the key hashed.** The keyed file set is the lock, Shikumi's own
-  Nix sources, and every tracked `.nix` file inside the manifest's project directories and the
-  catalog. The core copies exactly that set into the store with a filtered `builtins.path` and
-  evaluates from the copy. An import from outside the set, or of an untracked file, fails loudly and
-  names the file. So the key is exact by construction, and the set is also the declared list of what
-  declarations may import. Evaluating from a store copy also keeps the evaluator away from sockets and
-  FIFOs in the checkout.
-- **The key also covers the evaluator:** its implementation and version, the system, `NIX_PATH`, and
-  the experimental features and settings that change evaluation.
-- **No flake entry.** Evaluating a flake copies the whole source tree into the store on CppNix and
-  Lix, which costs seconds per miss on a large repository. The layer has a plain entry point instead,
-  and the lock's toolchain pins are fetched as fixed-output sources by hash.
-- **Cheap hits.** A stat cache (size, mtime, ctime, inode) per keyed file means a hit rehashes only
-  files whose stat changed, the way Git keeps this cheap. A hit then costs one
-  `git ls-files` plus a stat per keyed file, which is what the 0.2 s shell-entry target rests on. The
-  target is measured on a large generated repository, not only on the fixtures.
+- **The evaluation reads only what the key hashed.** The keyed file set derives from `layer.rs`: the
+  manifest, every tracked file named as a declaration or catalog file, and every tracked `.nix` file
+  inside a listed project's directory or the catalog's. A file Git doesn't track, a symlink and
+  anything behind one are left out. Each part is staged in a directory holding exactly its keyed
+  files, as they were hashed, and a marker file whose value is the copy's root as a path, then
+  copied into a private store under Shikumi's cache directory, which holds only such copies, the
+  layer and the locked nixpkgs. Each evaluation opens that store under a database of its own,
+  loaded with `nix-store --load-db` and registering only its own copies, the layer and the locked
+  nixpkgs, so every other path in the store is invalid to it. The evaluator enters each copy by
+  `builtins.path` with the NAR hash the producer computed, which pure mode allows without reading
+  anything else; naming another path the store holds is refused as it would be on an empty store.
+  A read of anything the copy doesn't hold is a `not-keyed` finding naming the file, and a read pure mode refuses, of a
+  file outside the repository, the clock, the host's system, the search path or a URL, is an
+  `impure` finding.
+- **The key** covers the evaluator's resolved program path and its size, mtime and inode, which name
+  its implementation, version and build; every setting the producer pins, from the one table its
+  command line is built from; the layer's and the locked nixpkgs' NAR hashes; each keyed file's
+  path, digest and executable bit; and the request. The evaluator reads no configuration file:
+  `NIX_CONF_DIR` names an empty directory and `NIX_USER_CONF_FILES` is empty, so the command line is
+  all it's told. The host's system can't change a result, since pure mode takes
+  `builtins.currentSystem` away and the manifest names every system the catalog is read for, and
+  neither can the checkout's location, since a declaration sees only the copy.
+- **Parts.** The plan's part is the manifest and every tracked file named as a declaration or
+  catalog file, which is what it tests for; the catalog's is its directory; the projects' is the
+  manifest and every project's and the catalog's directory. Editing a declaration misses the plan
+  and the projects and keeps the catalog's read, the slowest evaluation of a run.
+- **Cheap hits.** A stat cache per checkout keeps each keyed file's size, mtime, ctime, inode, device
+  and mode beside its digest, so a run rehashes only files whose stat changed. As in Git's index, an
+  entry whose mtime or ctime isn't strictly older than the stat cache's own file is racily clean and
+  is hashed again, so an edit made in the tick the cache was written can't hide behind an unchanged
+  stat. A hit costs one `git ls-files`, a stat per keyed file and a read of each part's entry;
+  finding the keyed files is a lookup of each tracked `.nix` file's ancestors among the keyed
+  directories, linear in the tracked files and their depth.
+- **Where it lives.** Under `$XDG_CACHE_HOME/shikumi`, or `~/.cache/shikumi`, never in the checkout.
+  Entries are keyed by content, so worktrees of one commit share them; a stat cache is one per
+  checkout; a private store is one per evaluator, since each implementation keeps its own store
+  database. Entries are bounded at 512 MiB and stat caches at 256, least recently read first. A
+  store's keyed copies are collected once more than 8 have gathered, so each collection removes a
+  few and no one run pays for many: a collection costs about a tenth of a second per thousand files
+  the copies it deletes hold.
+- **How runs share the cache.** A hit reads entries and waits on nothing. A miss holds the store's
+  collection lock shared from before its first root until every copy it needs has landed. Each
+  copy is rooted by a link of its own in the store's roots, but the link names a path that isn't
+  valid until its copy lands, and a collection skips such a root; the copying evaluation's own
+  temporary root ends when it exits. A collection holds that lock alone from before it reads the
+  roots until it has deleted, so under the hold it either ends before the roots or starts after
+  the copies, and finds every root valid. Every implementation takes the lock with `flock`, and a
+  copying evaluation asks for a shared hold without waiting to write its temporary root, so a copy
+  made under the hold proceeds and only a collection waits. A miss waits only for a collection
+  already running.
+- **When a collection starts.** Maintenance starts a collection only when it finds the lock free,
+  so it doesn't queue a collection behind copies already in flight. It can't hand that lock to the
+  collection, though, so a run whose shared hold comes in the moment between the test and the
+  collection taking the lock makes the collection, and the end of the run that started it, wait
+  for that run's copies.
+- **Runs adding the same path take turns,** under one of a fixed set of locks taken in order. Lix
+  checks a path's validity again after its own lock through its path-info cache, which keeps a
+  negative answer for as long as `narinfo-cache-negative-ttl` once the process has looked the path
+  up and missed, so two adds at once could each write the path, the second deleting the tree the
+  first is reading.
+- **What a run leaves.** Staging directories, evaluation databases, roots and every file written
+  to be renamed into place are named for the process that made them, and maintenance removes those
+  whose process is gone. A store no run has used for 30 days goes with its pins, its state and its
+  twin, and a store with no mark yet, one another run has only just made, is kept.
+- **Where the store's state lives.** Its database, roots and collection lock are under its own
+  `nix/var/nix`, unless that would put the socket a copy hands its temporary root to past 104
+  bytes, the most a socket address holds on macOS (108 on Linux): Lix 2.95 reaches a longer one
+  through a helper whose failure it doesn't retry, so a copy that starts while a collection gets
+  ready would fail; Lix 2.96 retries it. Then the state lives in a real directory of its own in the
+  temporary directory, which only this user can write, recorded in the store and made again when
+  the record names no such directory; when the temporary directory is cleaned, the next run starts
+  on an empty database and copies again what it needs. The directory names its store and the
+  process that made it, and goes with its store: a run that replaces it removes it, maintenance that
+  forgets a store removes its state, and maintenance removes any such directory its store doesn't
+  record once the process that made it is gone, which takes the state of a cache removed by hand.
+- **The store's twin, for Lix.** Lix reads a `local?root=` store at its real location, so a
+  declaration's `./.` is where the copy lies under the cache directory. An evaluator is asked once,
+  by evaluating a copy's root marker, whether it does, and the answer is kept with its identity.
+  For one that does, every evaluation runs against the store and against its twin at once, the
+  twin's on a thread of the job's own, and the run starts half as many jobs at a time, so its
+  evaluator processes still number its cores; the two answers are compared with the twin's root
+  written as the store's. A batch whose answers differ is halved down to the
+  project that differs, which is a `location` failure; a catalog or toolchain context read that
+  differs fails for its system. Lix refuses a store under a symlink and resolves a symlinked store
+  path to where it points, which pure mode then refuses, so the twin, `<cache>/twins/<id>/located`,
+  is real directories of hard links to the store's files: a directory entry per file, once per copy,
+  on the same filesystem. Maintenance prunes each mirrored copy the store has let go.
+- **A full disk is the disk's.** A write into the cache that finds no space, the copying
+  evaluation's or the staging's, is reported as the cache's disk being full, naming the cache
+  directory.
+- **The document.** A composition's checked document is kept too, under every part's key and the
+  `shikumi` program that checked it, so a hit reads one entry and builds no checker's model of the
+  declarations.
+- **No flake entry.** Evaluating a flake copies the whole source tree into the store on every miss.
+  The layer has a plain entry point, and the lock's nixpkgs enters by its NAR hash: from the host's
+  store when the tree is there, as it is once anything has fetched it, and fetched into the private
+  store with `nix-prefetch-url` otherwise.
+
+### Lock
+
+Current. `shikumi.lock/` at a repository's root holds every input Shikumi fetches, by hash. It's
+owned by the `shikumi-lock` crate, and the producer reads it as Git tracks it.
+
+- **Layout.** `lock.json` names the contract and its version. Every other file is a shard holding
+  the entries of one package of one ecosystem, `<ecosystem>/<package>.jsonl`, one JSON object per
+  line, sorted. Two changes to different packages touch different files, so they merge without a
+  conflict, and each line is one artifact a person finds with grep.
+- **Entries.** An entry is tagged with its ecosystem, a closed set, and has that ecosystem's shape.
+  The one ecosystem is `toolchain`: nixpkgs and nix-unit, each a tarball URL and its unpacked tree's
+  NAR hash. An ecosystem added later is a new tag with a shape of its own and leaves every existing
+  line as it is. Every line has to be written exactly as Shikumi writes it, so a lock has one
+  spelling.
+- **Writing.** `shikumi lock pin` writes a toolchain source's entry, fetching the tarball with the
+  host's `nix-prefetch-url` to hash it unless the hash is given. Each file is written whole and
+  renamed into place.
+- **Reading.** A repository with no lock, or a lock that doesn't read, is refused before anything is
+  evaluated, naming the file and line. The producer needs nixpkgs pinned; nix-unit is optional.
+- **Cost.** Reading is linear in the entries, one pass over the tracked lock files.
 
 ### Language backends
 
@@ -539,15 +677,17 @@ Its lifetime rules, each with a test that drives it:
 | --- | --- | --- | --- |
 | Registry document `shikumi.registry` | JSON with a schema, `registry.schema.json` version 1.0 | `shikumi-registry`'s checker produces it from the serialized declarations | every step and service, repository tools, the viewer |
 | Serialized declarations `shikumi.declarations` | JSON with a schema, `declarations.schema.json` version 1.0 | declaration layer | the checker |
-| Lock | JSON lines with a schema, one artifact per line, sorted and sharded | core | core, reviewers, grep |
+| Lock `shikumi.lock` | JSON lines, one artifact per line, sorted and sharded, with `lock.schema.json` for `lock.json` and `lock-entry.schema.json` for a line, version 1.0 | `shikumi-lock` | the producer, reviewers, grep |
+| Toolchain context `shikumi.toolchain-context` | JSON with a schema, `toolchain-context.schema.json` version 1.0, unpublished | `shikumi-registry`'s producer, from the catalog | backends and shells, once they exist |
 | Build trace | JSON lines with a schema | core | benchmarks, profiling tools |
 | Cache manifest | JSON with a schema | core | core on other machines |
 | Benchmark record | JSON lines with a schema, `record.schema.json` version 2 | benchmark harness | benchmark comparisons, the execution measurement, every backend's speed claims |
 | Overhead fixture graph | JSON with a schema, `overhead-units.schema.json` version 1 | benchmark harness | the execution measurement |
 
-A contract changes only through a reviewed design change, by a version bump its schema records. Four
-contracts are current: the two benchmark contracts, with their schemas in `bench/schema/`, and the
-registry document and the serialized declarations, with their schemas in `crates/registry/schema/`.
+A contract changes only through a reviewed design change, by a version bump its schema records. Six
+contracts are current: the two benchmark contracts, with their schemas in `bench/schema/`; the
+registry document, the serialized declarations and the toolchain context, with their schemas in
+`crates/registry/schema/`; and the lock, with its schemas in `crates/lock/schema/`.
 
 The state database isn't a contract: no other program reads it. It's the core's internal state, with
 a versioned schema and migrations so a newer Shikumi opens an older database.
@@ -566,8 +706,10 @@ Shikumi is designed for repositories of 100k source files, a few thousand crates
 - **Edit loop:** O(affected units) `.drv` writes and builds, plus one batched validity query. The
   evaluator isn't in it.
 - **No-op build:** one batched validity query against the action index. Target 300 ms or less.
-- **Shell entry on a cache hit:** a stat per keyed Nix file, rehashing only changed ones. Target 0.2 s
-  or less.
+- **Shell entry on a cache hit:** a stat per keyed Nix file, rehashing only changed ones, and a read of
+  the kept document. Target 0.2 s or less. Producing the registry document on a hit measures 89 ms
+  at 3000 projects and 6002 tracked `.nix` files and 281 ms at 10000 projects and 20002 files, on 16
+  cores: it grows with the document, which a shell needs only part of.
 - **Store:** one path per unit stage, so millions of small paths over time. GC and SQLite
   registration at that scale are measured before anything depends on them.
 - **Lock:** linear in the number of artifacts, sharded so concurrent changes rarely conflict.
@@ -590,15 +732,7 @@ accepted targets like the rest of the page, except those marked current.
 | A worktree never has two supervisors or a lost service | [service supervisor](#service-supervisor) | the four lifetime tests |
 | Every Nix implementation serializes the same declarations and yields the same findings, for declarations that don't inspect the evaluator | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, which hold each implementation's serialized declarations for every fixture, and its classified evaluation failures, to one tracked reference, and the registry crate's tests, which hold the document and the rendered findings those declarations give; current |
 | A project's declaration comes out the same evaluated beside others as evaluated alone | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, which compare every project of a failing fixture on one core with the same project focused on, and the producer's tests over every mix of failures; current |
-| No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer) | the `registry-no-builds-*` gate checks, one per implementation, which plant output reads in a declaration and in the catalog, and a `builtins.exec`, that the producer has to refuse on every implementation; current, with the known gap below |
-| The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | the checker refusing a store reference or the repository's location, and the `registry-worktrees` gate check, which compares two worktrees and plants a leak it has to catch; current, with the known gap below |
-
-**Known gap in the last two rows.** A declaration can read a file by a plain path that carries no
-store context: a store path whose context it stripped, an untracked file or one outside the
-repository, `.git`, a directory listing of the checkout, a directory reached through a symlink, or
-the clock, or the host's system through `builtins.currentSystem`, and on CppNix and Determinate Nix
-root's channels through the search path, such as `<nixpkgs>`. It can also carry a value derived from
-the repository's location, such as its parent directory. Its document can then depend on the host or
-the worktree, and no check plants such a read beyond the worktree's name. The gap is owned by [the
-context cache](#context-cache), whose evaluation from a store copy of exactly the keyed files makes
-pure evaluation possible.
+| No builds during evaluation, no import-from-derivation | [declaration layer](#the-declaration-layer), evaluating through [the context cache](#context-cache) | the `registry-no-builds-*` gate checks, one per implementation, which plant output reads in a declaration and in the catalog, a `builtins.exec`, and the toolchain context's `outPath`, that the producer has to refuse, or for the context compute without building, with a control that reaches each; current |
+| An evaluation reads only the keyed files and the locked nixpkgs | [the context cache](#context-cache) | the `registry-no-builds-*` gate checks, which plant a store path with its context stripped, an untracked file, `.git`, a file outside the repository, a symlinked directory, an absolute symlink, a file that isn't `.nix`, the clock, the host's system and a search-path lookup, each refused with a control that reaches it; current, with the limits under the context cache |
+| The registry document holds no store paths and is identical across worktrees of one commit | [declaration layer](#the-declaration-layer) | the checker refusing a store reference or the repository's location, and taking the hash out of every store path a finding quotes, and the `registry-worktrees` gate check, which compares two worktrees with different untracked files and plants the location's name and a listing of the repository, which have to give the two the same findings while a control evaluating each checkout itself tells them apart; current, with the limits under the context cache |
+| A cache hit is what a miss would give | [the context cache](#context-cache) | the registry crate's tests, which change each part of the key alone and have to miss; current |

@@ -140,6 +140,8 @@
         "thrown",
         "assertion",
         "invalid-utf8",
+        "not-keyed",
+        "impure",
         "evaluation",
         "shikumi-bug"
       ]

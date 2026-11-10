@@ -35,6 +35,91 @@ pub const CATALOG: LayerFile = LayerFile {
     arguments: &["lib"],
 };
 
+/// the extension of every Nix file the layer reads, and so of every file in the keyed set an
+/// evaluation may import: each file above ends with it, and the context cache copies only files
+/// that do.
+pub const NIX_EXTENSION: &str = "nix";
+
+/// what the files an evaluation may read are, as every message about one it may not read says it.
+/// a macro, so the failure kind's and the finding code's meanings, which are constants, can put it
+/// in their own sentences.
+#[macro_export]
+macro_rules! keyed_files {
+    () => {
+        "a `.nix` file Git tracks inside a listed project's or the catalog's directory, reached through no symlink"
+    };
+}
+
+/// the names of what the producer copies into its store for an evaluation to read, which the
+/// checker and the gate's harness read too.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreNames {
+    /// a copy of keyed files: one part of a composition.
+    pub keyed: &'static str,
+    /// the copy of the layer's own Nix.
+    pub layer: &'static str,
+    /// the file every keyed copy holds at its root beside the keyed files, whose value is that
+    /// root as a path. it's Shikumi's, written into the copy, never a repository's.
+    pub root_marker: &'static str,
+}
+
+pub const STORE_NAMES: StoreNames = StoreNames {
+    keyed: "shikumi-keyed",
+    layer: "shikumi-layer",
+    root_marker: ".shikumi-root.nix",
+};
+
+/// a builtin the layer's scope withholds, and whether an evaluator also gives it a global name
+/// without `__` in front.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Withheld {
+    pub name: &'static str,
+    /// the scope shadows the `__` name of every withheld builtin, and the bare one only where an
+    /// evaluator gives it: a scope's name outranks an attribute `with` brings in, so a bare name
+    /// no evaluator defines would take `pkgs.fetchurl` from nixpkgs' `with pkgs; fetchurl`.
+    pub global: bool,
+}
+
+/// the builtins every file a declaration's evaluation reaches is evaluated without, nixpkgs
+/// included, by the layer's scope: every one that reaches a fetcher, on any of the implementations
+/// Shikumi runs on, whether or not that implementation or pure and restricted mode refuse the call
+/// itself, since Determinate Nix's `getFlake` takes a locked reference to any flake, commit or
+/// directory on the host. the scope also refuses a lookup-path entry with a scheme, which reaches
+/// `fetchTree`'s fetchers through `findFile` and `<...>`. the producer reads reaching one, the
+/// evaluator's missing-attribute error, as a refused read. which names are global is each
+/// implementation's `RegisterPrimOp` name or builtins page, as the route table has them.
+pub const WITHHELD: &[Withheld] = &[
+    Withheld {
+        name: "getFlake",
+        global: false,
+    },
+    Withheld {
+        name: "fetchTree",
+        global: true,
+    },
+    Withheld {
+        name: "fetchGit",
+        global: true,
+    },
+    Withheld {
+        name: "fetchTarball",
+        global: true,
+    },
+    Withheld {
+        name: "fetchurl",
+        global: false,
+    },
+    Withheld {
+        name: "fetchMercurial",
+        global: true,
+    },
+    Withheld {
+        name: "fetchClosure",
+        global: false,
+    },
+];
+
 /// the fields the layer's Nix reads by name to know which files to read and how: the manifest's
 /// projects and catalog, the catalog entry's directory and systems, and the catalog's packages and
 /// overrides, with each override's build. the names are the vocabulary's; nix-unit holds the Nix
@@ -102,12 +187,15 @@ impl LayerFile {
 
 /// the table as the layer reads it.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Written {
     manifest: LayerFile,
     declaration: LayerFile,
     catalog: LayerFile,
     reads: Reads,
     frames: Frames,
+    store_names: StoreNames,
+    withheld: &'static [Withheld],
 }
 
 /// the table written out, as `fixtures/layer.json` holds it.
@@ -118,6 +206,8 @@ pub fn json() -> String {
         catalog: CATALOG,
         reads: READS,
         frames: FRAMES,
+        store_names: STORE_NAMES,
+        withheld: WITHHELD,
     })
 }
 
@@ -135,6 +225,19 @@ mod tests {
             "crates/registry/fixtures/layer.json is stale; it, and nix/declarations/layer.json, have to be:\n{}",
             json()
         );
+    }
+
+    // a layer file without the extension would be left out of every store copy, and no
+    // evaluation could read it.
+    #[test]
+    fn every_file_the_layer_reads_is_keyed() {
+        for file in [MANIFEST, DECLARATION, CATALOG] {
+            assert!(
+                file.name.ends_with(&format!(".{NIX_EXTENSION}")),
+                "{}",
+                file.name
+            );
+        }
     }
 
     #[test]

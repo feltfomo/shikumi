@@ -1,6 +1,6 @@
 { shikumi }:
 let
-  built = import ../../built.nix "echo planted > $out";
+  built = import ./built.nix "echo planted > $out";
 in
 shikumi.project {
   project = {

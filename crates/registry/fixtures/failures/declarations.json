@@ -492,7 +492,7 @@
           "user": {
             "frames": [
               {
-                "file": "projects/syntax/settings.nixpart",
+                "file": "projects/syntax/settings.nix",
                 "line": 5,
                 "column": 15
               },

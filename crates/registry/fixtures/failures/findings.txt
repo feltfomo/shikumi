@@ -38,14 +38,14 @@ error[missing]: `project.summary` is required but not defined
   = help: add `summary = ...;`
 
 error[syntax]: this file isn't valid Nix: syntax error, unexpected '=', expecting ';'
- --> projects/syntax/settings.nixpart:5:15
+ --> projects/syntax/settings.nix:5:15
   |
 5 |   maintainers = [ "someone" ];
   |               ^
 note: reached from here
  --> projects/syntax/project.nix:3:13
   |
-3 |   project = import ./settings.nixpart;
+3 |   project = import ./settings.nix;
   |             ^^^^^^
 
 error[thrown]: evaluation threw an error: summary is required

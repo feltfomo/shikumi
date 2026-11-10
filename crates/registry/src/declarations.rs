@@ -144,6 +144,9 @@ closed_set! {
         Thrown = "thrown": "a `throw` or `abort` evaluation reached",
         Assertion = "assertion": "an `assert` whose condition was false",
         InvalidUtf8 = "invalid-utf8": "text that isn't valid UTF-8, which the registry document can't carry",
+        NotKeyed = "not-keyed": concat!("an import or read of a file that isn't ", crate::keyed_files!()),
+        Impure = "impure": "a read pure evaluation refuses: a file outside the repository, a store path the evaluation wasn't given, the clock, the host's system, the search path or a URL",
+        Location = "location": "a value built from where the evaluator reads the repository's copy, which Lix gives a declaration through `./.` and source positions",
         Unrecognized = "unrecognized": "a failure Shikumi doesn't recognize, with the evaluator's own message",
         Crashed = "crashed": "an evaluator that stopped without reporting an error, as one that was killed does",
     }

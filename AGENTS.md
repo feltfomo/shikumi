@@ -54,6 +54,8 @@ output for the current system:
   Markdown file names one of its headings or HTML anchors.
 - `private-names`: no tracked file or path contains a protected name. The names are held only as salted
   digests in `tools/repo-check`; add one with `repo-check digest`, which reads it from stdin.
+- `lint-attributes`: no tracked Rust file carries an `allow` or `expect` attribute, on its own or inside
+  `cfg_attr`, since a finding is fixed rather than silenced.
 - `conformance-cppnix-2-35`, `conformance-determinate-3-24`, `conformance-lix-2-95` and
   `conformance-lix-2-96`: one NixOS VM test per Nix implementation, defined in `nix/conformance.nix`.
   Inside each VM an untrusted user runs `shikumi-conformance` three times, through the CLI, the daemon
@@ -69,22 +71,35 @@ output for the current system:
   adapter in NixOS, in Home Manager from nixpkgs' pin of its source, and against a copy of
   flake-parts' option declarations.
 - `registry-no-builds-cppnix-2-35`, `registry-no-builds-determinate-3-24`, `registry-no-builds-lix-2-95`
-  and `registry-no-builds-lix-2-96`: under that implementation, the packaged `shikumi` serializes the
+  and `registry-no-builds-lix-2-96`: under that implementation, each fixture made a Git repository
+  with a lock by `nix/declarations/tests/repository.sh`, the packaged `shikumi` serializes the
   basic and broken fixtures' declarations, catalogs included, exactly as `crates/registry/fixtures/`
   holds them, and refuses each planted declaration or catalog under `nix/declarations/tests/planted/`,
-  which reaches for a build's output or a program; a control evaluation without the producer's
-  refusals has to reach it. The failures fixture's evaluation failures classify as the tracked
-  reference has them, every project evaluated beside the others on one core matches it focused on
-  alone, and a fault planted in a copy of the layer comes back as a Shikumi bug. The findings as that
+  which reaches for a build's output, a program, or a read outside the keyed files, with a finding
+  whose own line names what it planted; a control evaluation without the producer's refusals has
+  to reach it, through a copy of the layer that withholds no builtin. The planted toolchain context
+  resolves its package to the path a control build writes, and builds nothing, and each planted
+  case that reads where the evaluator reads its copy prints the same under two cache directories,
+  or is refused the same way under both. The failures fixture's evaluation failures classify as the
+  tracked reference has them, every project evaluated beside the others on one core matches it
+  focused on alone, and a fault planted in a copy of the layer comes back as a Shikumi bug. The
+  basic fixture also comes out as its reference has it with a collection trying to start between
+  a run's roots and its copies landing. These steps run side by side. The findings as that
   implementation renders them are kept in the result, and fail the check if they name Shikumi's own
   files or a store path. The document and the rendered findings those declarations give are held by
   the registry crate's tests. Defined, with the next two, in `nix/declarations-checks.nix`, and run
   by `nix/declarations-no-builds.sh`.
 - `registry-cli`: the packaged `shikumi`, on one implementation, accepts the basic fixture with its
   tracked document and refuses the broken and failures fixtures with their tracked findings, each on the
-  stream and with the exit code each view uses, and a manifest that doesn't parse with one finding.
-- `registry-worktrees`: the document from two Git worktrees of one commit at different paths is
-  byte-identical, neither worktree's files change, and a planted location leak makes the two differ.
+  stream and with the exit code each view uses, a manifest that doesn't parse with one finding, and a
+  repository with no lock or a broken one before evaluating anything.
+- `registry-worktrees`: the document from two Git worktrees of one commit at different paths, with
+  different untracked files, is byte-identical, and neither worktree's files change. A planted
+  declaration that writes its directory's name and a listing of the repository into the document
+  gives both the same findings, the name refused as the location, while a control evaluating each
+  checkout itself tells them apart.
+- `lock-merge`: two branches that each pin a different toolchain source with `shikumi lock pin`
+  merge without a conflict, and the same pin moved on both branches conflicts in its one shard.
 - `declarations-reference`: `docs/reference/declarations.md` is exactly what `shikumi registry
   reference` generates from the vocabulary.
 - `docs-history`: no page under `docs/` outside `docs/records/` carries a history marker: a phase or
@@ -93,7 +108,7 @@ output for the current system:
 The checks see only what Git tracks, so a new file needs `git add --intent-to-add` before the gate sees
 it. For quick passes while working, run the same tools inside `nix develop`: `cargo nextest run`,
 `cargo clippy --all-targets`, and `git ls-files -z | cargo run -q -p repo-check -- links` (or `names`,
-or `history`).
+`history` or `attributes`).
 One conformance VM builds on its own with `nix build .#checks.x86_64-linux.conformance-lix-2-95`; its
 reports are `report-cli.txt`, `report-socket.txt` and `report-ssh.txt` in the result, each beside the
 run's stderr, and the build log prints them too.

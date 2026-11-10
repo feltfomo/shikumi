@@ -452,7 +452,7 @@
           "column": 3
         }
       },
-      "message": "has a name that contains the repository's location, which differs between worktrees",
+      "message": "has a name that contains the location the repository is evaluated from, which changes with every edit to its Nix",
       "help": null,
       "related": []
     },
@@ -471,7 +471,7 @@
           "column": 5
         }
       },
-      "message": "contains the repository's location, which differs between worktrees",
+      "message": "contains the location the repository is evaluated from, which changes with every edit to its Nix",
       "help": null,
       "related": []
     },

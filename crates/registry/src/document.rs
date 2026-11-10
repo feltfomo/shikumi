@@ -243,7 +243,7 @@ closed_set! {
         Enum = "enum": "a value outside a closed enumeration",
         UnknownOption = "unknown-option": "a field the record doesn't have",
         StoreReference = "store-reference": "text that refers to a store path",
-        Location = "location": "text that contains the repository's location",
+        Location = "location": "text that contains the repository's location, or a value built from where the evaluator reads it",
         UnknownReference = "unknown-reference": "a name that refers to no project, step, catalog package or toolchain",
         Cycle = "cycle": "projects that depend on each other, or steps that run after each other, in a loop",
         Duplicate = "duplicate": "a name that has one owner defined twice: a command, service or toolchain more than one project declares, or an environment variable a shell gets from two places",
@@ -258,6 +258,8 @@ closed_set! {
         Thrown = "thrown": "evaluation reached a `throw` or an `abort`",
         Assertion = "assertion": "evaluation reached an `assert` whose condition is false",
         InvalidUtf8 = "invalid-utf8": "text that isn't valid UTF-8, which the registry document can't carry",
+        NotKeyed = "not-keyed": concat!("an import or read of a file that isn't ", crate::keyed_files!()),
+        Impure = "impure": "a read that would make the declarations depend on the machine or the moment: a file outside the repository, a store path, the clock, the host's system, the search path or a URL",
         Evaluation = "evaluation": "evaluation failed in a way Shikumi doesn't recognize, or the evaluator stopped without saying why",
         ShikumiBug = "shikumi-bug": "evaluation failed inside Shikumi's own Nix, which is a bug in Shikumi rather than in the declaration",
     }

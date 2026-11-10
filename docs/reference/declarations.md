@@ -99,7 +99,7 @@ Text, identifiers, paths, globs and JSON strings can't contain the repository's 
 | `enum` | a value outside a closed enumeration |
 | `unknown-option` | a field the record doesn't have |
 | `store-reference` | text that refers to a store path |
-| `location` | text that contains the repository's location |
+| `location` | text that contains the repository's location, or a value built from where the evaluator reads it |
 | `unknown-reference` | a name that refers to no project, step, catalog package or toolchain |
 | `cycle` | projects that depend on each other, or steps that run after each other, in a loop |
 | `duplicate` | a name that has one owner defined twice: a command, service or toolchain more than one project declares, or an environment variable a shell gets from two places |
@@ -114,5 +114,7 @@ Text, identifiers, paths, globs and JSON strings can't contain the repository's 
 | `thrown` | evaluation reached a `throw` or an `abort` |
 | `assertion` | evaluation reached an `assert` whose condition is false |
 | `invalid-utf8` | text that isn't valid UTF-8, which the registry document can't carry |
+| `not-keyed` | an import or read of a file that isn't a `.nix` file Git tracks inside a listed project's or the catalog's directory, reached through no symlink |
+| `impure` | a read that would make the declarations depend on the machine or the moment: a file outside the repository, a store path, the clock, the host's system, the search path or a URL |
 | `evaluation` | evaluation failed in a way Shikumi doesn't recognize, or the evaluator stopped without saying why |
 | `shikumi-bug` | evaluation failed inside Shikumi's own Nix, which is a bug in Shikumi rather than in the declaration |

@@ -47,6 +47,66 @@ pub enum Answer {
     /// the catalog as the asked system reads it, or null for a system the pinned nixpkgs doesn't
     /// know.
     Catalog(Option<CatalogRead>),
+    /// the toolchain context for the asked system, or null for a system the pinned nixpkgs
+    /// doesn't know.
+    Context(Option<SystemContext>),
+}
+
+/// the toolchain context on one system: each catalog entry's package, by catalog name, as the
+/// store path of its output, or null where nixpkgs refuses to compute one, as it does for a
+/// package whose licence or known vulnerability it won't evaluate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SystemContext {
+    pub packages: BTreeMap<String, Option<OutputPath>>,
+}
+
+/// an absolute store path: a store directory, then a hash part of 32 characters of nix base-32
+/// and a name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct OutputPath(String);
+
+impl TryFrom<String> for OutputPath {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let parsed = value.rsplit_once('/').and_then(|(directory, _)| {
+            shikumi_derivation::StoreDir::new(directory)
+                .ok()?
+                .parse(&value)
+                .ok()
+        });
+        match parsed {
+            Some(_) => Ok(Self(value)),
+            None => Err(format!("{value:?} isn't an absolute store path")),
+        }
+    }
+}
+
+impl From<OutputPath> for String {
+    fn from(value: OutputPath) -> Self {
+        value.0
+    }
+}
+
+impl OutputPath {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl JsonSchema for OutputPath {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "OutputPath".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "pattern": format!("^/.+/{}-[^/]+$", shikumi_derivation::HASH_PART_PATTERN)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -96,6 +156,11 @@ pub enum Request<'a> {
         file: &'a RelativePath,
         system: &'a str,
     },
+    /// the toolchain context of the catalog, for one system.
+    Context {
+        file: &'a RelativePath,
+        system: &'a str,
+    },
 }
 
 impl Request<'_> {
@@ -122,9 +187,16 @@ impl Request<'_> {
             (Self::Evaluate(asked), Answer::Projects(projects)) => projects.len() == asked.len(),
             (Self::Locate(_), Answer::Projects(projects)) => projects.len() == 1,
             (Self::Catalog { .. }, Answer::Catalog(_)) => true,
-            (Self::Plan {}, Answer::Projects(_) | Answer::Catalog(_))
-            | (Self::Evaluate(_) | Self::Locate(_), Answer::Plan(_) | Answer::Catalog(_))
-            | (Self::Catalog { .. }, Answer::Plan(_) | Answer::Projects(_)) => false,
+            (Self::Context { .. }, Answer::Context(_)) => true,
+            (Self::Plan {}, Answer::Projects(_) | Answer::Catalog(_) | Answer::Context(_))
+            | (
+                Self::Evaluate(_) | Self::Locate(_),
+                Answer::Plan(_) | Answer::Catalog(_) | Answer::Context(_),
+            )
+            | (Self::Catalog { .. }, Answer::Plan(_) | Answer::Projects(_) | Answer::Context(_))
+            | (Self::Context { .. }, Answer::Plan(_) | Answer::Projects(_) | Answer::Catalog(_)) => {
+                false
+            }
         }
     }
 }
@@ -174,6 +246,14 @@ mod tests {
             }
             .to_json(),
             r#"{"catalog":{"file":"nix/catalog/catalog.nix","system":"x86_64-linux"}}"#
+        );
+        assert_eq!(
+            Request::Context {
+                file: &catalog,
+                system: "x86_64-linux"
+            }
+            .to_json(),
+            r#"{"context":{"file":"nix/catalog/catalog.nix","system":"x86_64-linux"}}"#
         );
     }
 
@@ -229,6 +309,14 @@ mod tests {
         assert!(!read.answered_by(&projects(1)));
         assert!(!Request::Plan {}.answered_by(&Answer::Catalog(None)));
         assert_eq!(read.name(), "catalog");
+        let context = Request::Context {
+            file: &catalog,
+            system: "x86_64-linux",
+        };
+        assert!(context.answered_by(&Answer::Context(None)));
+        assert!(!context.answered_by(&Answer::Catalog(None)));
+        assert!(!read.answered_by(&Answer::Context(None)));
+        assert_eq!(context.name(), "context");
     }
 
     #[test]

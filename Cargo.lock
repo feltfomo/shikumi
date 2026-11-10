@@ -541,6 +541,7 @@ name = "shikumi"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "shikumi-lock",
  "shikumi-registry",
 ]
 
@@ -569,10 +570,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "shikumi-contract"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "shikumi-derivation"
 version = "0.1.0"
 dependencies = [
  "sha2",
+]
+
+[[package]]
+name = "shikumi-lock"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "schemars",
+ "serde",
+ "serde_json",
+ "shikumi-contract",
+ "shikumi-derivation",
+ "tempfile",
 ]
 
 [[package]]
@@ -590,10 +613,15 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "fancy-regex",
+ "libc",
  "rayon",
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
+ "shikumi-contract",
+ "shikumi-derivation",
+ "shikumi-lock",
  "tempfile",
  "unicode-width",
 ]

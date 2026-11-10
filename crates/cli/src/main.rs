@@ -23,6 +23,8 @@ enum Command {
         about = "Read the registry: the project list, one project, the document, its findings or its schemas"
     )]
     Registry(shikumi_registry::view::RegistryArgs),
+    #[command(about = "Pin toolchain sources in the repository's lock, or print its schemas")]
+    Lock(shikumi_lock::cli::LockArgs),
 }
 
 fn run(command: Command) -> Result<(), String> {
@@ -33,6 +35,8 @@ fn run(command: Command) -> Result<(), String> {
             &mut std::io::stderr().lock(),
         )
         .map_err(|error| error.to_string()),
+        Command::Lock(args) => shikumi_lock::cli::run(&args, &mut std::io::stdout().lock())
+            .map_err(|error| error.to_string()),
     }
 }
 
@@ -68,6 +72,16 @@ mod tests {
             &["shikumi", "registry", "check", "--format", "json"],
             &["shikumi", "registry", "declarations", "--root", "repo"],
             &["shikumi", "registry", "reference"],
+            &["shikumi", "registry", "context", "--root", "repo"],
+            &["shikumi", "registry", "schema", "toolchain-context"],
+            &[
+                "shikumi",
+                "lock",
+                "pin",
+                "nixpkgs",
+                "https://example.invalid/a.tar.gz",
+            ],
+            &["shikumi", "lock", "schema", "header"],
         ] {
             Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
         }

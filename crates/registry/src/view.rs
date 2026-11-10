@@ -1,8 +1,8 @@
 //! the read-only registry viewer, as a subcommand a CLI registers: the project list, one project's
-//! detail, the whole document, the findings, the serialized declarations, the published schemas
-//! and the declarations reference. it reads only what the producer hands it, so it refuses exactly
-//! the declarations every other entry point refuses, and renders their findings against the
-//! repository's own files.
+//! detail, the whole document, the findings, the serialized declarations, the toolchain context,
+//! the published schemas and the declarations reference. it reads only what the producer hands it,
+//! so it refuses exactly the declarations every other entry point refuses, and renders their
+//! findings against the repository's own files.
 
 use std::fmt::Write as _;
 use std::io::{self, Write};
@@ -17,6 +17,7 @@ use crate::evaluation;
 use crate::produce::{ProduceError, Producer};
 use crate::reference;
 use crate::render::{Sources, render};
+use crate::toolchain;
 
 #[derive(Debug, Args)]
 pub struct RegistryArgs {
@@ -51,6 +52,17 @@ enum View {
     },
     #[command(about = "Print the declarations as Shikumi read them, with their source positions")]
     Declarations(Composition),
+    #[command(
+        about = "Print the toolchain context: each catalog package's store path, for every system, built or not"
+    )]
+    Context {
+        #[arg(
+            long,
+            default_value = ".",
+            help = "The repository root, which holds the manifest"
+        )]
+        root: PathBuf,
+    },
     #[command(about = "Print a published JSON schema")]
     Schema {
         #[arg(
@@ -69,6 +81,7 @@ enum Schema {
     Registry,
     Declarations,
     Evaluation,
+    ToolchainContext,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -158,14 +171,16 @@ pub fn run(
         }
         View::Declarations(composition) => {
             let producer = Producer::from_environment()?;
-            let (declarations, _) =
+            let produced =
                 producer.declarations(&composition.root, composition.focus()?.as_ref())?;
-            render_json(&declarations)
+            render_json(&produced.declarations)
         }
+        View::Context { root } => render_json(&Producer::from_environment()?.context(root)?),
         View::Schema { of } => match of {
             Schema::Registry => render_json(&document::schema()),
             Schema::Declarations => render_json(&declarations::schema()),
             Schema::Evaluation => render_json(&evaluation::schema()),
+            Schema::ToolchainContext => render_json(&toolchain::schema()),
         },
         View::Reference => reference::page(),
     };

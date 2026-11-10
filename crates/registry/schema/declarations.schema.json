@@ -260,6 +260,9 @@
         "thrown",
         "assertion",
         "invalid-utf8",
+        "not-keyed",
+        "impure",
+        "location",
         "unrecognized",
         "crashed"
       ]

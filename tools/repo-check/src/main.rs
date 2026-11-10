@@ -2,6 +2,7 @@
 //! stdin, NUL-separated: the flake check lists its source tree, which is exactly what Git tracks,
 //! and a developer pipes `git ls-files -z`. both run the same code over the same kind of list.
 
+mod attributes;
 mod history;
 mod links;
 mod names;
@@ -24,6 +25,8 @@ enum Command {
     Names,
     /// history markers in the product docs.
     History,
+    /// attributes that silence a lint in the Rust source.
+    Attributes,
     /// prints the digest line for a name to add to the private-name list.
     Digest,
 }
@@ -50,20 +53,27 @@ impl Command {
     /// every command, in the order the help lists them. the help and the parsing both read this, so
     /// a command can't be parsed without being listed, and a variant left out of it is never
     /// constructed, which the gate's Clippy refuses.
-    const ALL: [Self; 4] = [Self::Links, Self::Names, Self::History, Self::Digest];
+    const ALL: [Self; 5] = [
+        Self::Links,
+        Self::Names,
+        Self::History,
+        Self::Attributes,
+        Self::Digest,
+    ];
 
     const fn name(self) -> &'static str {
         match self {
             Self::Links => "links",
             Self::Names => "names",
             Self::History => "history",
+            Self::Attributes => "attributes",
             Self::Digest => "digest",
         }
     }
 
     const fn input(self) -> Input {
         match self {
-            Self::Links | Self::Names | Self::History => Input::TrackedPaths,
+            Self::Links | Self::Names | Self::History | Self::Attributes => Input::TrackedPaths,
             Self::Digest => Input::Name,
         }
     }
@@ -161,6 +171,7 @@ fn main() -> ExitCode {
         Command::Links => tracked_paths().and_then(|paths| check_links(&paths)),
         Command::Names => tracked_paths().and_then(|paths| check_names(&paths)),
         Command::History => tracked_paths().and_then(|paths| check_history(&paths)),
+        Command::Attributes => tracked_paths().and_then(|paths| check_attributes(&paths)),
     };
     match findings {
         Ok(findings) if findings.is_empty() => ExitCode::SUCCESS,
@@ -222,6 +233,16 @@ fn check_history(paths: &[String]) -> io::Result<Vec<Finding>> {
     flatten(per_file)
 }
 
+fn check_attributes(paths: &[String]) -> io::Result<Vec<Finding>> {
+    let sources: Vec<&String> = paths.iter().filter(|p| attributes::applies(p)).collect();
+    let per_file = parallel_map(&sources, |path| {
+        let contents = std::fs::read(path)
+            .map_err(|e| io::Error::new(e.kind(), format!("reading {path}: {e}")))?;
+        Ok(attributes::check(path, &contents))
+    });
+    flatten(per_file)
+}
+
 fn check_links(paths: &[String]) -> io::Result<Vec<Finding>> {
     let markdown: Vec<String> = paths
         .iter()
@@ -274,7 +295,10 @@ fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Ve
             .collect();
         handles
             .into_iter()
-            .flat_map(|h| h.join().expect("a check worker panicked"))
+            .flat_map(|h| {
+                h.join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
             .collect()
     })
 }
@@ -302,19 +326,20 @@ mod tests {
         assert_eq!(parse(&["names"]), Some(Command::Names));
         assert_eq!(parse(&["digest"]), Some(Command::Digest));
         assert_eq!(parse(&["history"]), Some(Command::History));
+        assert_eq!(parse(&["attributes"]), Some(Command::Attributes));
         assert_eq!(parse(&["link"]), None);
         assert_eq!(parse(&[]), None);
         assert_eq!(parse(&["links", "names"]), None);
     }
 
     // the help is generated from the same table the parsing reads; this holds it to naming every
-    // command with what it reads, in a line of the shape the help has always had.
+    // command with what it reads, one line per kind of input.
     #[test]
     fn the_help_names_every_command() {
         let help = usage();
         assert_eq!(
             help,
-            "usage: repo-check <links|names|history> < NUL-separated tracked paths\n       \
+            "usage: repo-check <links|names|history|attributes> < NUL-separated tracked paths\n       \
              repo-check digest < name"
         );
         for command in Command::ALL {

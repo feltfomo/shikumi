@@ -122,7 +122,7 @@
       "project": "syntax",
       "path": [],
       "location": {
-        "file": "projects/syntax/settings.nixpart",
+        "file": "projects/syntax/settings.nix",
         "position": {
           "line": 5,
           "column": 15

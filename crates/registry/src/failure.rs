@@ -150,7 +150,10 @@ pub(crate) fn classify(stderr: &str, places: Places<'_>) -> Classified {
         }
     }
 
-    let (kind, message) = kind(&error);
+    let (kind, message) = match unkeyed(&error.message, places.root) {
+        Some(file) => (FailureKind::NotKeyed, file.to_owned()),
+        None => kind(&error),
+    };
     // a failure is Shikumi's only when it never passed through the user's files and Shikumi's own
     // code ran where it happened: outside every forcing of a user's value, or called from inside
     // one. text that isn't valid UTF-8 is the user's data, which Shikumi's `toJSON` only rejects.
@@ -218,7 +221,51 @@ fn kind(error: &Error<'_>) -> (FailureKind, String) {
     if message.contains(INVALID_UTF8) {
         return (FailureKind::InvalidUtf8, message.to_owned());
     }
+    if IMPURE.iter().any(|said| message.contains(said)) || withheld(message) {
+        return (FailureKind::Impure, message.to_owned());
+    }
     (FailureKind::Unrecognized, message.to_owned())
+}
+
+/// the file inside the repository's copy a failure couldn't find, which is one the copy doesn't
+/// hold: Lix says it got no status for it, CppNix and Determinate Nix that it doesn't exist.
+fn unkeyed<'m>(message: &'m str, root: &str) -> Option<&'m str> {
+    if !NOT_FOUND.iter().any(|said| message.contains(said)) {
+        return None;
+    }
+    let quoted = message.split_once('\'')?.1.split_once('\'')?.0;
+    inside(quoted, root)
+}
+
+/// how each implementation says a path it was asked for isn't there.
+const NOT_FOUND: [&str; 2] = ["No such file or directory", "does not exist"];
+
+/// how each implementation refuses a read in pure or restricted mode, each the start of a phrase in
+/// its message: a path outside what it was given, a search-path lookup, `builtins.storePath`, a
+/// fetch without a hash, a URL, and the builtins pure mode takes away.
+const IMPURE: [&str; 8] = [
+    "is forbidden in pure eval",
+    "is forbidden in restricted mode",
+    "in pure evaluation mode (use",
+    "is not allowed in pure evaluation mode",
+    "in pure evaluation mode, '",
+    "attribute 'currentSystem' missing",
+    "attribute 'currentTime' missing",
+    "is not allowed in restricted mode",
+];
+
+/// whether the message is an evaluator's on reaching a builtin the layer's scope withholds, which
+/// the scope leaves missing.
+fn withheld(message: &str) -> bool {
+    crate::layer::WITHHELD
+        .iter()
+        .map(|withheld| withheld.name)
+        .any(|name| {
+            message
+                .strip_prefix("attribute '")
+                .and_then(|rest| rest.strip_prefix(name))
+                .is_some_and(|rest| rest.starts_with("' missing"))
+        })
 }
 
 /// the evaluator's text with the repository's location taken out, so the document it reaches is
@@ -720,13 +767,57 @@ mod tests {
     #[test]
     fn the_repositorys_location_is_taken_out_of_the_message() {
         let read = classify(
-            &printed(&[], "path '/repo/app/nowhere.nix' does not exist", None),
+            &printed(&[], "cannot read '/repo/app/data.json' as a set", None),
             PLACES,
         );
-        assert_eq!(
-            read.failure.message,
-            "path 'app/nowhere.nix' does not exist"
+        assert_eq!(read.failure.message, "cannot read 'app/data.json' as a set");
+    }
+
+    // the store copy holds only the keyed files, so a file it doesn't hold is one evaluation may
+    // not read, however each implementation says it isn't there.
+    #[test]
+    fn a_file_the_copy_does_not_hold_is_not_keyed() {
+        for message in [
+            "path '/repo/app/untracked.nix' does not exist",
+            "getting status of '/repo/app/untracked.nix': No such file or directory",
+        ] {
+            let read = classify(
+                &printed(
+                    &[("while importing", Some("/repo/app/project.nix:3:5"))],
+                    message,
+                    None,
+                ),
+                PLACES,
+            );
+            assert_eq!(read.failure.kind, FailureKind::NotKeyed, "{message}");
+            assert_eq!(read.failure.message, "app/untracked.nix");
+        }
+        // a missing file outside the copy says nothing about the keyed set.
+        let elsewhere = classify(
+            &printed(&[], "path '/elsewhere/x.nix' does not exist", None),
+            PLACES,
         );
+        assert_eq!(elsewhere.failure.kind, FailureKind::Unrecognized);
+    }
+
+    // each implementation's words for a read pure or restricted evaluation refuses.
+    #[test]
+    fn a_read_pure_evaluation_refuses_is_impure() {
+        for message in [
+            "access to absolute path '/etc/passwd' is forbidden in pure evaluation mode (use '--impure' to override)",
+            "access to absolute path '/etc/passwd' is forbidden in pure eval mode (use '--impure' to override)",
+            "cannot look up '<nixpkgs>' in pure evaluation mode (use '--impure' to override)",
+            "attribute 'currentSystem' missing",
+            "attribute 'currentTime' missing",
+            "'builtins.storePath' is not allowed in pure evaluation mode",
+            "in pure evaluation mode, 'fetchTarball' requires a 'sha256' argument",
+            "access to URI 'https://example.invalid' is forbidden in restricted mode",
+        ] {
+            let read = classify(&printed(&[], message, None), PLACES);
+            assert_eq!(read.failure.kind, FailureKind::Impure, "{message}");
+        }
+        let other = classify(&printed(&[], "attribute 'summary' missing", None), PLACES);
+        assert_ne!(other.failure.kind, FailureKind::Impure);
     }
 
     #[test]

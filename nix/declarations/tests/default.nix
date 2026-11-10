@@ -1,7 +1,7 @@
 # nix-unit tests of the declaration layer, run by the gate's `declarations` check: the factory,
 # serialization and its source positions, the vocabulary, composition over the fixture repositories
-# beside this file, the catalog's reading of the pinned nixpkgs, and the module adapter in each
-# module system. whether a declaration is right is
+# beside this file, the catalog's reading of the pinned nixpkgs and its toolchain context, and the
+# module adapter in each module system. whether a declaration is right is
 # the Rust checker's to say, so nothing here asserts a finding; `testNothingIsCheckedInNix` holds
 # that the layer passes every value through as written.
 {
@@ -60,6 +60,7 @@ let
   basicDarwin = catalogIn ./fixtures/basic "aarch64-darwin";
   brokenLinux = catalogIn ./fixtures/broken "x86_64-linux";
   overlayCatalog = testCatalog "overlay";
+  scopeCatalog = testCatalog "scope";
   malformedCatalog = testCatalog "malformed";
   standIns = testCatalog "stand-ins";
 
@@ -688,6 +689,67 @@ in
     expected = true;
   };
 
+  # every way one file reaches another evaluates it in the layer's scope, which withholds the
+  # builtins that read outside the keyed files whatever pure and restricted mode allow.
+  testNoWayOfReachingAFileSeesAWithheldBuiltin = {
+    expr =
+      builtins.mapAttrs (_: field: field.value.value)
+        (compose ./fixtures/scope).projects.app.value.fields.extensions.value.fields.seen.value.fields;
+    expected = {
+      here = false;
+      builtinsImport = false;
+      scopedImport = false;
+      builtinsScopedImport = false;
+      scopedImportOwnBuiltins = false;
+      evalModules = false;
+      callPackageWith = false;
+      compose = false;
+    };
+  };
+
+  # a scope can't take a name away, so a withheld builtin's global names are shadowed by what
+  # reaching it through `builtins` gives.
+  testAWithheldBuiltinsGlobalNameIsMissing = {
+    expr = builtins.deepSeq ((composition ./fixtures/scope).read "app/getflake.nix") true;
+    expectedError.msg = "attribute 'getFlake' missing";
+  };
+
+  testAWithheldBuiltinsOtherGlobalNameIsMissing = {
+    expr = builtins.deepSeq ((composition ./fixtures/scope).read "app/fetchtree.nix") true;
+    expectedError.msg = "attribute 'fetchTree' missing";
+  };
+
+  # a lookup-path entry with a scheme reaches the fetchers through `findFile` and `<...>`, and is
+  # refused as reaching a withheld one is; the lookup nixpkgs' bootstrap makes still resolves.
+  testALookupPathEntryWithASchemeIsRefused = {
+    expr = builtins.deepSeq ((composition ./fixtures/scope).read "app/lookup.nix") true;
+    expectedError.msg = "attribute 'fetchTree' missing";
+  };
+
+  # a scope's names outrank what `with` brings in, so it shadows only the global names an
+  # evaluator really gives a withheld builtin; nixpkgs' `with pkgs; fetchurl` keeps meaning
+  # `pkgs.fetchurl`.
+  testAWithheldBuiltinWithNoGlobalNameLeavesWithAlone = {
+    expr = map (node: node.value) ((composition ./fixtures/scope).read "app/with.nix").value.items;
+    expected = [
+      "from with"
+      "from with"
+      "from with"
+    ];
+  };
+
+  testTheLookupNixpkgsBootstrapMakesResolves = {
+    expr = ((composition ./fixtures/scope).read "app/corepkgs.nix").value.value;
+    expected = true;
+  };
+
+  # nixpkgs is evaluated in the scope too, so a file its own `callPackage` imports for an override
+  # sees no withheld builtin either.
+  testAFileNixpkgsImportsForAnOverrideSeesNoWithheldBuiltin = {
+    expr = (packageOf scopeCatalog "hello").pname;
+    expected = "withheld-unseen";
+  };
+
   testTheOverlayAppliesItsEntriesToThePackageSet = {
     expr = (packageOf overlayCatalog "hello").pname;
     expected = "hello-overridden";
@@ -761,6 +823,36 @@ in
         propagates = [ ];
       };
     };
+  };
+
+  # the toolchain context gives each entry's package as its output's path, computed in the same
+  # package set the read uses, and nothing for a package whose path can't be computed.
+  testTheContextResolvesEachEntryToItsOutputPath =
+    let
+      inherit ((import ../layer.nix { inherit nixpkgs; })) context;
+      resolved = context ./catalogs/context {
+        file = "catalog.nix";
+        system = "x86_64-linux";
+      };
+      pkgs = import nixpkgs {
+        localSystem.system = "x86_64-linux";
+        config = { };
+      };
+    in
+    {
+      expr = resolved;
+      expected.packages = {
+        hello = builtins.unsafeDiscardStringContext pkgs.hello.outPath;
+        refused = null;
+      };
+    };
+
+  testTheContextOfASystemNixpkgsDoesNotKnowIsNull = {
+    expr = (import ../layer.nix { inherit nixpkgs; }).context ./catalogs/context {
+      file = "catalog.nix";
+      system = "x86_64-nowhere";
+    };
+    expected = null;
   };
 
   testASystemNixpkgsDoesNotKnowReadsNoPackageSet = {

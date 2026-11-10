@@ -33,5 +33,40 @@
     "project": "shikumi-project",
     "field": "shikumi-field",
     "forcedFile": "forced.nix"
-  }
+  },
+  "storeNames": {
+    "keyed": "shikumi-keyed",
+    "layer": "shikumi-layer",
+    "rootMarker": ".shikumi-root.nix"
+  },
+  "withheld": [
+    {
+      "name": "getFlake",
+      "global": false
+    },
+    {
+      "name": "fetchTree",
+      "global": true
+    },
+    {
+      "name": "fetchGit",
+      "global": true
+    },
+    {
+      "name": "fetchTarball",
+      "global": true
+    },
+    {
+      "name": "fetchurl",
+      "global": false
+    },
+    {
+      "name": "fetchMercurial",
+      "global": true
+    },
+    {
+      "name": "fetchClosure",
+      "global": false
+    }
+  ]
 }

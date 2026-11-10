@@ -21,6 +21,7 @@ use std::fmt;
 
 use rayon::prelude::*;
 use serde_json::{Map, Value};
+use shikumi_derivation::{HASH_PART_LEN, is_hash_part};
 
 use crate::contract::{ATTRIBUTE_PATH_ACCEPTS, RelativePath, Scalar, is_attribute_path};
 use crate::declarations::{
@@ -33,7 +34,7 @@ use crate::document::{
     text,
 };
 use crate::graph::{self, Edge};
-use crate::layer::{CATALOG, DECLARATION, MANIFEST};
+use crate::layer::{CATALOG, DECLARATION, MANIFEST, STORE_NAMES};
 use crate::vocabulary::{self, Key, ManifestField, Presence, Record, Type, names};
 
 /// how many of the places in the user's code that led to a failure are shown after the one it
@@ -42,11 +43,11 @@ const RELATED_FRAMES: usize = 8;
 /// how many of Shikumi's own frames a Shikumi bug names.
 const INTERNAL_FRAMES: usize = 4;
 
-/// checks the serialized declarations of the repository at `root`, the absolute path the
-/// declarations were evaluated from, and builds the document.
-pub fn check(declarations: &Declarations, root: &str) -> Result<Document, CheckError> {
+/// checks the serialized declarations and builds the document. `roots` are the absolute paths the
+/// declarations were evaluated from, each a location a string can carry.
+pub fn check(declarations: &Declarations, roots: &[&str]) -> Result<Document, CheckError> {
     match &declarations.manifest {
-        Evaluated::Value(manifest) => Checker::new(declarations, manifest, root).run(),
+        Evaluated::Value(manifest) => Checker::new(declarations, manifest, roots).run(),
         // every project's directory is the manifest's to say, so with no manifest there's nothing
         // else to read.
         Evaluated::Failed(failed) => {
@@ -88,7 +89,7 @@ impl std::error::Error for CheckError {}
 struct Checker<'a> {
     declarations: &'a Declarations,
     manifest: &'a Manifest,
-    root: &'a str,
+    roots: &'a [&'a str],
     findings: Vec<Diagnostic>,
     /// the project the findings being made belong to.
     project: Option<Identifier>,
@@ -308,11 +309,11 @@ struct Claim<'a> {
 type Directories = BTreeMap<String, Option<RelativePath>>;
 
 impl<'a> Checker<'a> {
-    fn new(declarations: &'a Declarations, manifest: &'a Manifest, root: &'a str) -> Self {
+    fn new(declarations: &'a Declarations, manifest: &'a Manifest, roots: &'a [&'a str]) -> Self {
         Self {
             declarations,
             manifest,
-            root,
+            roots,
             findings: Vec::new(),
             project: None,
             path: Vec::new(),
@@ -359,7 +360,7 @@ impl<'a> Checker<'a> {
         let each: Vec<(Vec<Diagnostic>, Checked<'a>)> = listed
             .into_par_iter()
             .map(|(project, directory, declaration)| {
-                let mut checker = Checker::new(declarations, manifest, self.root);
+                let mut checker = Checker::new(declarations, manifest, self.roots);
                 checker.overlay.clone_from(overlay);
                 let checked = checker.project(project, directory, declaration, &record)?;
                 Ok((checker.findings, checked))
@@ -1465,10 +1466,15 @@ impl<'a> Checker<'a> {
                 Code::StoreReference,
                 "refers to a store path, and the registry document carries none",
             ))
-        } else if self.root != "/" && normalized(value).contains(self.root) {
+        } else if value.contains(STORE_NAMES.keyed)
+            || self
+                .roots
+                .iter()
+                .any(|root| *root != "/" && normalized(value).contains(root))
+        {
             Some((
                 Code::Location,
-                "contains the repository's location, which differs between worktrees",
+                "contains the location the repository is evaluated from, which changes with every edit to its Nix",
             ))
         } else if contains_store_path(value) {
             Some((
@@ -1835,10 +1841,38 @@ fn diagnostic(
         project,
         path,
         location: here.location(),
-        message: text(finding.message),
-        help: finding.help.map(text),
-        related: finding.related,
+        message: text(redacted(&finding.message)),
+        help: finding.help.as_deref().map(redacted).map(text),
+        related: finding
+            .related
+            .into_iter()
+            .map(|related| Related {
+                message: text(redacted(related.message.as_str())),
+                ..related
+            })
+            .collect(),
     }
+}
+
+/// a finding's text with the hash of every store path it quotes taken out, so the document holds
+/// no store path even where a finding quotes one: an evaluator's error that names a path, or a
+/// catalog package whose name or program carries one. the rest of the path stays, so the reader
+/// still sees which package or file it was.
+fn redacted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for (index, component) in text.split('/').enumerate() {
+        if index > 0 {
+            out.push('/');
+        }
+        match component.get(HASH_PART_LEN..) {
+            Some(rest) if index > 0 && is_hash_part(component) => {
+                out.push('…');
+                out.push_str(rest);
+            }
+            _ => out.push_str(component),
+        }
+    }
+    out
 }
 
 // a failed evaluation of `file`, as the finding its kind calls for: where it goes, the field's path
@@ -1896,6 +1930,23 @@ fn failure<'f>(file: &'f RelativePath, failure: &'f Failure) -> (Here<'f>, Vec<S
             },
         )
         .help("cutting text by bytes, as `builtins.substring` does, can split a character in two"),
+        FailureKind::NotKeyed => finding(
+            Code::NotKeyed,
+            format!("`{detail}` is read here, and evaluation may read only the repository's keyed files"),
+        )
+        .help(concat!(
+            "keep what a declaration reads in ",
+            crate::keyed_files!()
+        )),
+        FailureKind::Impure => finding(
+            Code::Impure,
+            format!("evaluation refused a read that would tie the declarations to this machine or moment: {detail}"),
+        ),
+        FailureKind::Location => finding(
+            Code::Location,
+            "this declaration evaluates to something else when the evaluator reads the repository's copy from elsewhere, so it holds a value built from that location",
+        )
+        .help("Lix gives `./.` and source positions as the copy's place under this machine's cache directory; build nothing from them but paths inside the repository"),
         FailureKind::Unrecognized => {
             finding(Code::Evaluation, format!("evaluation failed: {detail}"))
         }
@@ -1988,14 +2039,7 @@ fn index_segment(index: usize) -> u32 {
 // path whose context was stripped, by `match` or `substring` as much as by
 // `unsafeDiscardStringContext`.
 fn contains_store_path(text: &str) -> bool {
-    const HASH: usize = 32;
-    let base32 = |b: &u8| b.is_ascii_digit() || (b.is_ascii_lowercase() && !b"eotu".contains(b));
-    text.split('/').skip(1).any(|component| {
-        let bytes = component.as_bytes();
-        bytes.len() >= HASH
-            && bytes[..HASH].iter().all(base32)
-            && bytes.get(HASH).is_none_or(|&b| b == b'-')
-    })
+    text.split('/').skip(1).any(is_hash_part)
 }
 
 // text with doubled slashes and `.` components taken out, so a path the evaluator would read as
@@ -2059,7 +2103,7 @@ mod tests {
     const ROOT: &str = "/repo";
 
     fn checked(declarations: &Declarations, root: &str) -> Document {
-        check(declarations, root).unwrap()
+        check(declarations, &[root]).unwrap()
     }
 
     fn fixture(tracked: &str) -> Declarations {
@@ -2474,18 +2518,44 @@ mod tests {
         );
     }
 
+    // the fixture as a repository holds it: every repository the checks make holds a file of the
+    // extension `held-as` names under the one it names beside it, which its findings carry.
     #[test]
     fn the_failures_fixture_renders_at_the_users_lines() {
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../nix/declarations/tests/fixtures/failures");
+        let repository = tempfile::tempdir().unwrap();
+        copy_as_repository(&fixture, repository.path());
         let rendered = crate::render::render(
             failures().diagnostics(),
-            &mut crate::render::Sources::new(&fixture),
+            &mut crate::render::Sources::new(repository.path()),
         );
         assert!(
             rendered == include_str!("../fixtures/failures/findings.txt"),
             "crates/registry/fixtures/failures/findings.txt differs from the rendering:\n{rendered}"
         );
+    }
+
+    fn copy_as_repository(from: &std::path::Path, to: &std::path::Path) {
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().into_string().unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                std::fs::create_dir(to.join(&name)).unwrap();
+                copy_as_repository(&entry.path(), &to.join(&name));
+            } else {
+                let (held, held_as) =
+                    include_str!("../../../nix/declarations/tests/fixtures/held-as")
+                        .trim()
+                        .split_once(' ')
+                        .expect("`held-as` names two extensions");
+                let name = match name.strip_suffix(&format!(".{held}")) {
+                    Some(stem) => format!("{stem}.{held_as}"),
+                    None => name,
+                };
+                std::fs::copy(entry.path(), to.join(name)).unwrap();
+            }
+        }
     }
 
     // a failure of the user's with these frames, or, given frames of Shikumi's, a Shikumi bug.
@@ -2891,6 +2961,41 @@ mod tests {
             );
             assert_eq!(found.location.file.as_str(), "projects/jvm-app/project.nix");
         }
+    }
+
+    // a store path a finding quotes keeps its name and loses its hash, so a refused document holds
+    // no store path either.
+    #[test]
+    fn a_finding_quoting_a_store_path_holds_only_its_name() {
+        let quoted = "a: /nix/store/0123456789abcdfghijklmnpqrsvwxyz-bash-5.3/bin/bash, b: /nix/store/0123456789abcdfghijklmnpqrsvwxyz";
+        assert_eq!(
+            redacted(quoted),
+            "a: /nix/store/…-bash-5.3/bin/bash, b: /nix/store/…"
+        );
+        assert_eq!(redacted("projects/a/b.nix"), "projects/a/b.nix");
+        let found = diagnostic(
+            None,
+            Vec::new(),
+            Here::File(&RelativePath::checked("shikumi.nix".to_owned())),
+            finding(Code::Thrown, quoted.to_owned()).help(quoted.to_owned()),
+        );
+        assert!(!contains_store_path(found.message.as_str()));
+        assert!(!contains_store_path(found.help.unwrap().as_str()));
+    }
+
+    // a value derived from the store copy a declaration is evaluated from, such as its directory's
+    // name, which no root contains on its own.
+    #[test]
+    fn the_copys_name_is_the_repositorys_location() {
+        let declarations = fixture(
+            &include_str!("../fixtures/basic/declarations.json").replace(
+                "The shared core library",
+                "Kept in 0123456789abcdfghijklmnpqrsvwxyz-shikumi-keyed",
+            ),
+        );
+        let document = checked(&declarations, ROOT);
+        let codes: Vec<Code> = document.diagnostics().iter().map(|d| d.code).collect();
+        assert_eq!(codes, [Code::Location]);
     }
 
     #[test]

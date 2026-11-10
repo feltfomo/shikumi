@@ -5,21 +5,22 @@
 # nixpkgs' can only come from an override: there's no `pkgs.extend` or `.override` to reach for,
 # and an entry means the same attribute on every system.
 #
-# what comes back for the checker is, for one system, the catalog's value serialized like any
+# what comes back for the checker, `read`, is, for one system, the catalog's value serialized like any
 # declaration, which package each catalog name resolves to in that system's package set with the
 # overlay applied, and what every package reachable from them is called and propagates. a package
 # is known by its `name`, which nixpkgs makes from its `pname` and `version`, and the checker
 # compares the `pname` and `meta.mainProgram` it's given: that's what evaluation can see of what a
 # package puts on the path. nothing here forces a package's `outPath` or `drvPath`, so no store path
-# is computed and nothing is built or read from a build; the toolchain context, which does resolve
-# store paths, reads the same packages from here.
+# is computed and nothing is built or read from a build. `context`, the toolchain context, resolves
+# the same packages to store paths, in an evaluation of its own.
 #
 # the overlay is built from the entries the catalog declares, which can't see the package set they
 # change. an entry whose `package` isn't a function is left out of it, and the checker reports the
 # entry; one that is gets `final` and `prev` as an overlay function does.
 #
-# cost: one evaluation of the pinned nixpkgs per system per run, whatever the number of projects,
-# and one visit to each package reachable from the catalog through propagation.
+# cost: one evaluation of the pinned nixpkgs per system for each of `read` and `context`, whatever
+# the number of projects, and one visit to each package reachable from the catalog through
+# propagation.
 {
   lib,
   forced,
@@ -27,6 +28,8 @@
   call,
   # the nixpkgs source tree, imported for each system it's asked for.
   nixpkgs,
+  # the import for a repository's copy, in the scope every user file and nixpkgs is evaluated in.
+  importIn,
   # what the catalog file is called with.
   arguments,
 }:
@@ -107,72 +110,106 @@ let
       mainProgram = if main == "" then null else main;
       propagates = map nameOf (propagated package);
     };
-in
-root:
-{ file, system }:
-let
-  serialized = serialize (toString root);
-  known = builtins.elem system lib.systems.doubles.all;
+  # one system's reading of the catalog file: its value, and each entry's package with the overlay
+  # applied, or nothing for a system nixpkgs doesn't know.
+  resolved =
+    root:
+    { file, system }:
+    let
+      serialized = serialize (toString root);
+      importing = importIn root;
+      known = builtins.elem system lib.systems.doubles.all;
 
-  declared = call arguments (import (root + "/${file}"));
-  field = name: if isAttrs declared then forced (declared.${name} or null) else null;
-  attrsIn = value: if isAttrs value then value else { };
+      declared = call arguments (importing (root + "/${file}"));
+      field = name: if isAttrs declared then forced (declared.${name} or null) else null;
+      attrsIn = value: if isAttrs value then value else { };
 
-  overrides = lib.filterAttrs (
-    _: entry: isAttrs (forced entry) && isFunction (forced (entry.package or null))
-  ) (attrsIn (field "overrides"));
+      overrides = lib.filterAttrs (
+        _: entry: isAttrs (forced entry) && isFunction (forced (entry.package or null))
+      ) (attrsIn (field "overrides"));
 
-  pkgs = import nixpkgs {
-    localSystem = { inherit system; };
-    # given, so nixpkgs reads no configuration or overlay of the host's.
-    config = { };
-    overlays = [ (final: prev: mapAttrs (_: entry: entry.package final prev) overrides) ];
-  };
+      pkgs = importing nixpkgs {
+        localSystem = { inherit system; };
+        # given, so nixpkgs reads no configuration or overlay of the host's.
+        config = { };
+        overlays = [ (final: prev: mapAttrs (_: entry: entry.package final prev) overrides) ];
+      };
 
-  # each entry's package, or nothing where its path names no package on this system. an alias
-  # nixpkgs has removed throws, which counts as naming none; the checker reports the entry.
-  resolve =
-    path:
-    if isString (forced path) && !builtins.hasContext path then
-      let
-        found = builtins.tryEval (
+      # each entry's package, or nothing where its path names no package on this system. an alias
+      # nixpkgs has removed throws, which counts as naming none; the checker reports the entry.
+      resolve =
+        path:
+        if isString (forced path) && !builtins.hasContext path then
           let
-            value = lib.attrByPath (lib.splitString "." path) null pkgs;
+            found = builtins.tryEval (
+              let
+                value = lib.attrByPath (lib.splitString "." path) null pkgs;
+              in
+              if isPackage value then value else null
+            );
           in
-          if isPackage value then value else null
+          if found.success then found.value else null
+        else
+          null;
+    in
+    if known then
+      {
+        value = serialized.value declared;
+        packages = lib.filterAttrs (_: package: package != null) (
+          mapAttrs (_: resolve) (attrsIn (field "packages"))
         );
-      in
-      if found.success then found.value else null
+      }
     else
       null;
-  packages = lib.filterAttrs (_: package: package != null) (
-    mapAttrs (_: resolve) (attrsIn (field "packages"))
-  );
-
-  reachable = genericClosure {
-    startSet = lib.mapAttrsToList (_: package: {
-      key = nameOf package;
-      inherit package;
-    }) packages;
-    operator =
-      { package, ... }:
-      map (package: {
-        key = nameOf package;
-        inherit package;
-      }) (propagated package);
-  };
 in
-# a system nixpkgs doesn't know has no package set to read.
-if !known then
-  null
-else
-  {
-    value = serialized.value declared;
-    packages = mapAttrs (_: nameOf) packages;
-    graph = listToAttrs (
-      map (item: {
-        name = item.key;
-        value = describe item.package;
-      }) reachable
-    );
-  }
+{
+  # what the checker reads: the catalog's value, each entry's package by `name`, and the
+  # propagation graph from them. null for a system nixpkgs doesn't know.
+  read =
+    root: request:
+    let
+      catalog = resolved root request;
+      reachable = genericClosure {
+        startSet = lib.mapAttrsToList (_: package: {
+          key = nameOf package;
+          inherit package;
+        }) catalog.packages;
+        operator =
+          { package, ... }:
+          map (package: {
+            key = nameOf package;
+            inherit package;
+          }) (propagated package);
+      };
+    in
+    if catalog == null then
+      null
+    else
+      {
+        inherit (catalog) value;
+        packages = mapAttrs (_: nameOf) catalog.packages;
+        graph = listToAttrs (
+          map (item: {
+            name = item.key;
+            value = describe item.package;
+          }) reachable
+        );
+      };
+
+  # the toolchain context: each entry's package resolved to its output's store path, which
+  # forcing `outPath` computes from the derivation without building it or reading anything it
+  # builds. a package whose path can't be computed, as one nixpkgs refuses to evaluate for its
+  # licence or a known vulnerability can't, has none. null for a system nixpkgs doesn't know.
+  context =
+    root: request:
+    let
+      catalog = resolved root request;
+      path =
+        package:
+        let
+          computed = builtins.tryEval (unsafeDiscardStringContext package.outPath);
+        in
+        if computed.success then computed.value else null;
+    in
+    if catalog == null then null else { packages = mapAttrs (_: path) catalog.packages; };
+}

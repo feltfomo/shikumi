@@ -10,10 +10,15 @@ repository.workspace = true
 
 [dependencies]
 clap.workspace = true
+libc.workspace = true
 rayon.workspace = true
 schemars.workspace = true
+shikumi-contract.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+shikumi-derivation.workspace = true
+shikumi-lock.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]

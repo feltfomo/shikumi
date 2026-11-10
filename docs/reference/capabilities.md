@@ -10,8 +10,8 @@ cut where an output can be cached on its own, so an edit rebuilds only the units
 | [Where it runs](#where-it-runs)                               | CppNix, Determinate Nix and Lix, on Linux (WSL 2 included) and macOS on Apple silicon | Accepted target |
 | [Declarations](#declarations)                                 | projects that declare themselves, checked in one pass     | Current         |
 | [Registry document](#registry-document)                       | one versioned JSON view of every project                  | Current         |
-| [Packages and toolchains](#packages-overrides-and-toolchains) | one catalog, one owner per setting                        | Current; the pin waits on the lock |
-| [Lock](#lock)                                                 | one lock for toolchains and third-party artifacts         | Accepted target |
+| [Packages and toolchains](#packages-overrides-and-toolchains) | one catalog, one owner per setting                        | Current         |
+| [Lock](#lock)                                                 | one lock for toolchains and third-party artifacts         | Current for toolchains; third-party artifacts are a target |
 | [Build graph](#build-graph)                                   | per-stage caching in the store, early cutoff, queries     | Accepted target |
 | [Execution mechanism](#execution-mechanism)                   | how each unit actually runs                               | Open            |
 | [Languages](#languages)                                       | C, Rust per crate, Kotlin and Java, Python and Nushell    | Accepted target |
@@ -201,16 +201,34 @@ note: reached from here
 
 People author declarations in Nix, and the real Nix evaluator runs them. `shikumi.lib` takes the
 nixpkgs source tree from whoever imports it, runs on its `lib` and reads its package set for the
-catalog, and the `shikumi` package evaluates with the nixpkgs its flake pins. Pinning that nixpkgs
-in Shikumi's own [lock](#lock) is an accepted target.
+catalog, and the `shikumi` command evaluates with the nixpkgs the repository's [lock](#lock) pins.
+
+Every evaluation runs in pure mode from a store copy of exactly the files it may read: the manifest,
+and the `.nix` files Git tracks inside a listed project's directory or the catalog's. A declaration
+that imports or reads anything else is refused, naming the file:
+
+```text
+error[not-keyed]: `app/untracked.nix` is read here, and evaluation may read only the repository's keyed files
+ --> app/project.nix:5:15
+  |
+5 |     summary = import ./untracked.nix;
+  |               ^^^^^^
+  = help: keep what a declaration reads in a `.nix` file Git tracks, inside a listed project's or the catalog's directory, and not behind a symlink
+```
+
+A read that would tie the declarations to the machine or the moment, of a file outside the
+repository, the clock, the host's system, a search-path lookup such as `<nixpkgs>` or a URL, is an
+`impure` finding. What the evaluation came to is cached, so producing the document again reads
+nothing but the stat of each of those files; [the context cache](../explanation/architecture.md#context-cache)
+says how.
 
 ## Registry document
 
 | Capability                                                    | Status          |
 | ------------------------------------------------------------- | --------------- |
 | `shikumi.registry` version 1.0, with a published schema       | Current         |
-| No store paths, no command lines, identical across worktrees  | Limited, waits on the context cache |
-| No builds or reads of build outputs while producing it        | Limited, waits on the context cache |
+| No store paths, no command lines, identical across worktrees  | Current         |
+| No builds or reads of build outputs while producing it        | Current         |
 | No state written into the checkout                            | Current         |
 | A read-only viewer                                            | Current         |
 | Available as a store path to every step, command and service  | Accepted target |
@@ -228,27 +246,53 @@ in Shikumi's own [lock](#lock) is an accepted target.
   override's reason and release; the composition's focus, the remainder, and the diagnostics. A
   step's or command's command line and an override's build are declared and never copied in, and
   neither is a package: the document names packages by their catalog name and holds no store path.
-- **Identical across worktrees.** Two worktrees of one commit, at any paths, produce the same bytes,
+- **Identical across worktrees.** Two worktrees of one commit, at any paths, with any untracked files, produce the same bytes,
   on every supported Nix, and every implementation serializes the same declarations and yields the
   same findings for a declaration that doesn't inspect the evaluator. One that asks which evaluator
   it runs on, through `builtins.nixVersion` or a test for a builtin, gets that evaluator's answer, as
   Nix gives it. A string that carries the repository's location or a store path is refused, source
   positions are relative to the repository root, and the evaluation sees no environment variables.
 - **No builds.** A declaration that imports, reads, hashes or tests for a build output is refused,
-  naming the derivation, and so is one that runs a program through `builtins.exec`, whatever the
-  caller's Nix configuration says.
-- **Limits.** A declaration that reads a file by a plain path the evaluator can't tie to a build
-  isn't refused. It can read a store path whose context it stripped, a file Git doesn't track or one
-  outside the repository, `.git`, a directory listing of the checkout, a directory reached through a
-  symlink, the clock, the host's system through `builtins.currentSystem`, or, on CppNix and
-  Determinate Nix, root's channels through the search path, such as `<nixpkgs>`. It can also carry a
-  value derived from the repository's location, such as its parent directory or its name. So its
-  document can depend on the host or on the worktree. Both rows wait on the context cache, which
-  evaluates in pure mode from a store copy of exactly the tracked files a declaration may import.
+  naming the derivation, whether or not it took the path's string context off, and so is one that
+  runs a program through `builtins.exec`, whatever the caller's Nix configuration says.
+- **Nothing outside the keyed files.** A declaration can't read a file Git doesn't track, `.git`, a
+  file outside the repository, a file behind a symlink, a file that isn't `.nix`, the clock, the
+  host's system or the search path. A directory listing of the repository reads the store copy,
+  which is the same from every worktree of a commit, and text that holds the copy's location or its
+  name is refused as the repository's location. A finding that quotes a store path, from an
+  evaluator's error or a package's name, quotes it without its hash.
+- **Only what it entered.** Each evaluation opens Shikumi's store under a database of its own that
+  registers only its keyed copy, the layer and the locked nixpkgs, so naming another repository's
+  copy, or an earlier one of its own, by its NAR hash or its path is an `impure` finding however
+  full the store is, and a cached run and a fresh one agree. Every file a declaration's evaluation
+  reaches, nixpkgs included and however it's reached, by `import`, `scopedImport`, the module system
+  or `callPackage`, is evaluated without any builtin that reaches a fetcher: `getFlake`,
+  `fetchTree`, `fetchGit`, `fetchTarball`, `fetchurl`, `fetchMercurial` and `fetchClosure`. On
+  Determinate Nix, `getFlake`, and `findFile` with a `flake:` lookup-path entry, read any flake,
+  commit or directory on the machine in pure and restricted mode. A lookup-path entry that names a
+  scheme, given to `findFile` or bound as `__nixPath` for `<...>`, is refused the same way; the
+  lookups nixpkgs makes itself, such as `<nix/fetchurl.nix>`, still resolve. Reaching any of them
+  is an `impure` finding.
+- **Lix and the copy's location.** Lix reads Shikumi's store at its real location, so a
+  declaration's `./.` and its source positions are where the copy lies under this machine's cache
+  directory, where CppNix and Determinate Nix give the store path (lix `libexpr/eval.cc`,
+  `EvalPaths::toRealPath`). Text holding that location is refused everywhere; on Lix, every
+  evaluation that misses the cache also runs again against a second copy of the store at another
+  location, and a declaration whose answer differs between the two, because it built a value from
+  where the copy lies, such as its length or a hash of it, is a `location` finding. CppNix and
+  Determinate Nix evaluate once, and such a value is the same on every machine there, since the
+  store path depends only on the copy's content.
+- **Limit: a prefix of the cache directory on Lix.** A value built only from a prefix both copies'
+  locations share, part of the cache directory's own path, is the same under both and isn't
+  refused, so on Lix it can differ between users. Lix upstream owns what's missing: a way to
+  evaluate a `local?root=` store at its logical store path, as CppNix and Determinate Nix do. The
+  closing item is a request to Lix for that. Until then Shikumi refuses every location value that
+  differs between the two copies, and passes one built from their shared prefix. This reopens when
+  the request lands or is declined.
 - **No state in the checkout.** Producing it writes nothing there.
 - **The viewer** prints the project list, one project's detail, the document, its findings, the
-  declarations as Shikumi read them, the schemas and the declarations reference, run from the
-  repository root or given `--root`. It refuses a document with a diagnostic the same way every
+  declarations as Shikumi read them, the toolchain context, the schemas and the declarations
+  reference, run from the repository root or given `--root`. It refuses a document with a diagnostic the same way every
   consumer does, rendering each finding against the repository's files.
 
 ```fish
@@ -269,9 +313,9 @@ shikumi registry schema declarations
 | Two packages under one name on one path, propagated inputs included, refused    | Current         |
 | One overlay on the pinned nixpkgs, each entry with its reason and its release   | Current         |
 | The catalog read for every system the manifest names                            | Current         |
-| The pinned nixpkgs held in Shikumi's own lock                                   | Limited, waits on the lock |
+| The pinned nixpkgs held in Shikumi's own lock                                   | Current         |
 | One owning project per toolchain setting, imported by name                      | Current         |
-| The catalog's packages resolved to store paths for the toolchain context        | Accepted target |
+| The catalog's packages resolved to store paths for the toolchain context        | Current         |
 | Repository tools built as derivations, so entering a shell never compiles a tool | Accepted target |
 
 A repository names its catalog in the manifest: a directory holding `catalog.nix`, and the systems
@@ -364,8 +408,8 @@ env.NODE_ENV = "development";
   catalog entry is an attribute path, with no `pkgs.extend` or `.override` to reach for. An overlay
   declared anywhere else is refused as a second overlay: an `overlays` field in the catalog, or
   `overrides` in a project's declaration.
-- **The pinned nixpkgs** is the one the `shikumi` package was built against. Holding it in Shikumi's
-  own [lock](#lock) is a target, and it waits on the lock.
+- **The pinned nixpkgs** is the one the repository's [lock](#lock) pins. Moving it is
+  `shikumi lock pin nixpkgs <tarball URL>`, which fetches the tarball and writes its hash.
 - **Single-owner toolchain settings.** A setting such as the JDK or the Rust toolchain is defined
   under one project's `toolchains`, with a description, the packages it puts on the path and the
   variables it sets. Another project uses it through `project.imports`, naming the toolchain and the
@@ -375,25 +419,58 @@ env.NODE_ENV = "development";
   closure, so it sees a second definition only there; the global composition sees every one.
 - **Store paths.** Reading the catalog forces no package's `outPath` or `drvPath`, so it computes no
   store path unless an override's own code does. The document names each package by its catalog
-  name and attribute path. Resolving the packages a toolchain names to store paths belongs to the
-  toolchain context, which reads them from the same catalog and is a target.
+  name and attribute path. The toolchain context resolves every catalog entry's package to its
+  output's store path, for each system, without building it or reading anything a build writes, and
+  isn't part of the document. A package nixpkgs refuses to evaluate, for its licence or a known
+  vulnerability, has no path there. `shikumi registry context` prints it, as the
+  [`toolchain-context.schema.json`](../../crates/registry/schema/toolchain-context.schema.json)
+  record, version 1, which is unpublished while what its readers need is settled.
 - **Repository tools** are built as derivations, so entering a shell never compiles a tool.
 
 ## Lock
 
-Status: accepted target.
+| Capability                                                                | Status          |
+| ------------------------------------------------------------------------- | --------------- |
+| One lock per repository, Shikumi's own, at `shikumi.lock/`                | Current         |
+| nixpkgs and nix-unit pinned by URL and NAR hash, fetched by hash          | Current         |
+| JSON lines with a published schema, sorted, sharded by ecosystem and package | Current      |
+| A missing or broken lock refused, naming the file and line                | Current         |
+| Third-party artifacts, such as crates and Maven artifacts, in the same lock | Accepted target |
+| Native lock data reused where it carries a usable hash                    | Accepted target |
 
-- One lock, Shikumi's own, holds everything. Toolchain inputs, nixpkgs and nix-unit, are pinned there
-  and fetched by hash. Shikumi doesn't evaluate through flakes, which copy the whole source tree into
-  the store on every evaluation miss.
-- Third-party artifacts, such as crates and Maven artifacts, are pinned in the same lock:
-  content-addressed, one entry per artifact, sorted, sharded by ecosystem and package so merges stay
-  local, and searchable with grep. Each entry becomes a fixed-output derivation.
-- Native lock data is reused where it carries a usable hash. `Cargo.lock` checksums are the sha256 of
-  the `.crate` file. Where an ecosystem gives only sha1 or nothing, as Gradle does, Shikumi records
-  sha256 and the URL itself.
-- The lock's format is JSON lines with a published schema, one object per artifact per line.
-- One lock per repository. No per-directory copies.
+```fish
+shikumi lock pin nixpkgs https://github.com/NixOS/nixpkgs/archive/<revision>.tar.gz
+git add shikumi.lock
+```
+
+```text
+shikumi.lock/lock.json
+shikumi.lock/toolchain/nixpkgs.jsonl
+```
+
+```json
+{"ecosystem":"toolchain","name":"nixpkgs","url":"https://github.com/NixOS/nixpkgs/archive/<revision>.tar.gz","narHash":"sha256-…"}
+```
+
+- **One lock, sharded.** `lock.json` names the contract and its version, and every other file holds
+  the entries of one package of one ecosystem, one JSON object per line, sorted. Two changes to
+  different packages touch different files, so they merge without a conflict, and each line is one
+  artifact grep finds. Each line has to be written exactly as Shikumi writes it. The schemas are
+  [`lock.schema.json`](../../crates/lock/schema/lock.schema.json) for `lock.json` and
+  [`lock-entry.schema.json`](../../crates/lock/schema/lock-entry.schema.json) for a line.
+- **Toolchain sources.** nixpkgs and nix-unit are pinned as a tarball's URL and its unpacked tree's
+  NAR hash, the hash a flake's lock writes as `narHash`, so the same tree pinned either way is the
+  same store path. `shikumi lock pin` fetches the tarball with the host's `nix-prefetch-url` to hash
+  it, or takes `--hash`. Producing the registry needs nixpkgs; Shikumi takes it from the host's
+  store when that tree is there and fetches it by hash otherwise. Shikumi doesn't evaluate through
+  flakes, which copy the whole source tree into the store on every evaluation miss.
+- **Read as Git tracks it.** The lock is its tracked files, like everything else Shikumi reads, so a
+  new shard is part of it once it's added to Git.
+- **Third-party artifacts,** such as crates and Maven artifacts, are a target: content-addressed, one
+  entry per artifact in shards of their ecosystem, each becoming a fixed-output derivation.
+  `Cargo.lock` checksums are the sha256 of the `.crate` file, which an entry reuses. Where an
+  ecosystem gives only sha1 or nothing, as Gradle does, Shikumi records sha256 and the URL itself.
+- **One lock per repository.** No per-directory copies.
 
 ## Build graph
 

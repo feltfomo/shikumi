@@ -70,6 +70,26 @@
           "required": [
             "catalog"
           ]
+        },
+        {
+          "description": "the toolchain context for the asked system, or null for a system the pinned nixpkgs\ndoesn't know.",
+          "type": "object",
+          "properties": {
+            "context": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SystemContext"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "context"
+          ]
         }
       ]
     },
@@ -424,6 +444,10 @@
         }
       ]
     },
+    "OutputPath": {
+      "type": "string",
+      "pattern": "^/.+/[0123456789abcdfghijklmnpqrsvwxyz]{32}-[^/]+$"
+    },
     "Package": {
       "description": "what evaluation can see of a package without building it: what it's called, the program it\nruns as, and the packages it propagates into whatever depends on it, by `name`.",
       "type": "object",
@@ -530,6 +554,29 @@
       "description": "a normalized path relative to the repository root: no leading or trailing slash, no empty, `.` or `..` part",
       "type": "string",
       "pattern": "^(?!.*(^|/)\\.{1,2}(/|$))[^/]+(/[^/]+)*$"
+    },
+    "SystemContext": {
+      "description": "the toolchain context on one system: each catalog entry's package, by catalog name, as the\nstore path of its output, or null where nixpkgs refuses to compute one, as it does for a\npackage whose licence or known vulnerability it won't evaluate.",
+      "type": "object",
+      "properties": {
+        "packages": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/OutputPath"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "packages"
+      ]
     }
   }
 }

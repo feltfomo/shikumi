@@ -1,4 +1,5 @@
-# the worktree's directory name alone, which the checker's test for the whole location can't see.
+# the directory name of the location the declaration is evaluated from, which the checker's test for
+# the whole location can't see.
 { shikumi }:
 shikumi.project {
   project = {

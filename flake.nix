@@ -133,18 +133,17 @@
           repoCheck = named "repo-check";
           conformance = named "shikumi-conformance";
 
-          # the CLI with the declaration layer it ships and the nixpkgs that layer runs on. the
-          # nixpkgs is this flake's pin until Shikumi's own lock pins it.
+          # the CLI with the declaration layer it ships. the nixpkgs that layer runs on is the
+          # repository's own, pinned in its lock.
           shikumi =
             pkgs.runCommand "shikumi"
               {
-                nativeBuildInputs = [ pkgs.makeWrapper ];
+                nativeBuildInputs = with pkgs; [ makeWrapper ];
                 meta.mainProgram = "shikumi";
               }
               ''
                 makeWrapper ${lib.getExe (named "shikumi")} $out/bin/shikumi \
-                  --set SHIKUMI_NIX ${declarationLayer} \
-                  --set SHIKUMI_NIXPKGS ${nixpkgs}
+                  --set SHIKUMI_NIX ${declarationLayer}
               '';
 
           # the tracked file set is exactly the flake source, so the checks list it from there.
@@ -183,6 +182,7 @@
             )
             // import ./nix/declarations-checks.nix {
               inherit pkgs shikumi nixpkgs;
+              nixpkgsHash = nixpkgs.narHash;
               nix-unit = nix-unit.packages.${system}.default;
               layer = declarationLayer;
               tests = sourceOf ./nix/declarations;
@@ -245,6 +245,10 @@
               docs-history = repoCheckRun {
                 name = "docs-history";
                 subcommand = "history";
+              };
+              lint-attributes = repoCheckRun {
+                name = "lint-attributes";
+                subcommand = "attributes";
               };
             };
 

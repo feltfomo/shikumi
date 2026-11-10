@@ -1,4 +1,4 @@
 { shikumi, ... }:
 shikumi.project {
-  project = import ./settings.nixpart;
+  project = import ./settings.nix;
 }

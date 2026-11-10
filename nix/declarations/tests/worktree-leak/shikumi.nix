@@ -1,1 +1,6 @@
-{ projects.app = "app"; }
+{
+  projects = {
+    app = "app";
+    listing = "listing";
+  };
+}

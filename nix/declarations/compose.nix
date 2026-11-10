@@ -23,6 +23,8 @@
   manifestArguments,
   # the file names the layer shares with the registry's Rust.
   layer,
+  # the import for a repository's copy, in the scope every user file is evaluated in.
+  importIn,
 }:
 let
   inherit (builtins)
@@ -45,8 +47,9 @@ in
 let
   rootString = toString root;
   serialized = serialize rootString;
+  importing = importIn root;
 
-  manifestValue = call manifestArguments (import manifest);
+  manifestValue = call manifestArguments (importing manifest);
 
   listed =
     if isAttrs manifestValue && isAttrs (forced (manifestValue.projects or null)) then
@@ -82,7 +85,7 @@ let
   read =
     file:
     let
-      declaration = call arguments (import (root + "/${file}"));
+      declaration = call arguments (importing (root + "/${file}"));
       # the mark is the user's value; reading it is the factory's.
       factory = seq (forced (declaration._type or null)) (isProject declaration);
     in

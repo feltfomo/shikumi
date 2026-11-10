@@ -141,13 +141,13 @@ error[store-reference]: `project.summary` refers to a store path, and the regist
 8 |     summary = "Copied to ${copied}";
   |     ^^^^^^^
 
-error[location]: `extensions.meta` has a name that contains the repository's location, which differs between worktrees
+error[location]: `extensions.meta` has a name that contains the location the repository is evaluated from, which changes with every edit to its Nix
  --> projects/location/project.nix:7:3
   |
 7 |   extensions.meta.${toString ./.} = "keyed by the checkout's location";
   |              ^^^^
 
-error[location]: `project.summary` contains the repository's location, which differs between worktrees
+error[location]: `project.summary` contains the location the repository is evaluated from, which changes with every edit to its Nix
  --> projects/location/project.nix:4:5
   |
 4 |     summary = "Lives at ${toString ./.}";
