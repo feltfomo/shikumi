@@ -244,7 +244,10 @@ pub enum Node {
     Bool {
         value: bool,
     },
-    Null,
+    // the kinds that carry nothing are empty structs, not units: serde holds a unit variant of a
+    // tagged enum to none of the enum's `deny_unknown_fields`, and would take
+    // `{"kind": "null", "junk": 1}` as a null.
+    Null {},
     /// a path value, relative to the repository root, or null when it lies outside it.
     Path {
         #[serde(deserialize_with = "Option::deserialize")]
@@ -256,11 +259,11 @@ pub enum Node {
     Attrs {
         fields: BTreeMap<String, Field>,
     },
-    Function,
+    Function {},
     /// a derivation or anything else with an `outPath`, which stands for a store path.
-    Derivation,
+    Derivation {},
     /// infinity or NaN, which JSON can't write.
-    NonFinite,
+    NonFinite {},
     /// a value with more values in it, or deeper nesting, than serialization walks, as one that
     /// refers to itself has, with the limits the serializer held it to.
     TooLarge {
@@ -277,13 +280,13 @@ impl Node {
             Self::Int { .. } => "an integer",
             Self::Float { .. } => "a float",
             Self::Bool { .. } => "a boolean",
-            Self::Null => "null",
+            Self::Null {} => "null",
             Self::Path { .. } => "a path",
             Self::List { .. } => "a list",
             Self::Attrs { .. } => "an attribute set",
-            Self::Function => "a function",
-            Self::Derivation => "a derivation or another value with an `outPath`",
-            Self::NonFinite => "a number that isn't finite",
+            Self::Function {} => "a function",
+            Self::Derivation {} => "a derivation or another value with an `outPath`",
+            Self::NonFinite {} => "a number that isn't finite",
             Self::TooLarge { .. } => "a value too large to read",
         }
     }
@@ -332,6 +335,20 @@ mod tests {
 
     use super::*;
     use crate::contract::render_json;
+
+    // the schema says every node's kind has exactly its own fields, which the kinds that carry
+    // nothing have to hold to as well as the rest.
+    #[test]
+    fn a_node_with_a_field_its_kind_doesnt_have_is_refused() {
+        for kind in ["null", "function", "derivation", "non-finite"] {
+            let plain = format!(r#"{{"kind":"{kind}"}}"#);
+            assert!(serde_json::from_str::<Node>(&plain).is_ok(), "{plain}");
+            let extra = format!(r#"{{"kind":"{kind}","junk":1}}"#);
+            assert!(serde_json::from_str::<Node>(&extra).is_err(), "{extra}");
+        }
+        let string = r#"{"kind":"string","value":"x","context":false,"junk":1}"#;
+        assert!(serde_json::from_str::<Node>(string).is_err());
+    }
 
     #[test]
     fn tracked_schema_matches_the_types() {

@@ -199,7 +199,7 @@ mod tests {
             Answer::Projects(vec![
                 Declaration {
                     factory: true,
-                    value: crate::declarations::Node::Null
+                    value: crate::declarations::Node::Null {}
                 };
                 count
             ])
@@ -207,7 +207,7 @@ mod tests {
         let plan = Answer::Plan(Plan {
             manifest: Manifest {
                 file: RelativePath::new("shikumi.nix").unwrap(),
-                value: crate::declarations::Node::Null,
+                value: crate::declarations::Node::Null {},
             },
             files: BTreeMap::new(),
             catalog: None,

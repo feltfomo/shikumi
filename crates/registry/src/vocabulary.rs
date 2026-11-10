@@ -884,7 +884,7 @@ mod tests {
     // a plain JSON value as the serializer writes it, without positions.
     fn node(value: &Value) -> Node {
         match value {
-            Value::Null => Node::Null,
+            Value::Null => Node::Null {},
             Value::Bool(value) => Node::Bool { value: *value },
             Value::Number(n) => Node::Int {
                 value: n.as_i64().unwrap(),

@@ -798,7 +798,7 @@ impl<'a> Checker<'a> {
             Some(Evaluated::Value(declaration)) if !declaration.factory => {
                 let kind = declaration.value.kind();
                 // a function that comes back is one that asked for an argument it isn't given.
-                let help = if matches!(declaration.value, Node::Function) {
+                let help = if matches!(declaration.value, Node::Function {}) {
                     format!(
                         "a declaration file takes only {}: `{{ shikumi, ... }}: shikumi.project {{ ... }}`",
                         DECLARATION.called_with()
@@ -1583,7 +1583,7 @@ impl<'a> Checker<'a> {
             }
             Type::Record(record) => self.record(record, node, here),
             Type::Function => match node {
-                Node::Function => Some(Value::Null),
+                Node::Function {} => Some(Value::Null),
                 other => {
                     self.wrong_kind(here, "a function, `final: prev: ...`", other);
                     None
@@ -1688,12 +1688,12 @@ impl<'a> Checker<'a> {
             Node::Float { value } => match serde_json::Number::from_f64(*value) {
                 Some(number) => Some(Value::Number(number)),
                 None => {
-                    self.wrong_kind(here, EXPECTED, &Node::NonFinite);
+                    self.wrong_kind(here, EXPECTED, &Node::NonFinite {});
                     None
                 }
             },
             Node::Bool { value } => Some(Value::Bool(*value)),
-            Node::Null => Some(Value::Null),
+            Node::Null {} => Some(Value::Null),
             Node::List { items } => self
                 .items(items, |this, item| this.json(item, here))
                 .map(Value::Array),
