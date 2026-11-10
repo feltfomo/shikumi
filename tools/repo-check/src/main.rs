@@ -18,9 +18,6 @@ const MARKDOWN: pulldown_cmark::Options = pulldown_cmark::Options::ENABLE_TABLES
     .union(pulldown_cmark::Options::ENABLE_STRIKETHROUGH)
     .union(pulldown_cmark::Options::ENABLE_TASKLISTS);
 
-const USAGE: &str = "usage: repo-check <links|names|history> < NUL-separated tracked paths\n       \
-                     repo-check digest < name";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
     Links,
@@ -31,19 +28,73 @@ enum Command {
     Digest,
 }
 
+/// what a command reads on stdin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Input {
+    TrackedPaths,
+    Name,
+}
+
+impl Input {
+    const ALL: [Self; 2] = [Self::TrackedPaths, Self::Name];
+
+    const fn describe(self) -> &'static str {
+        match self {
+            Self::TrackedPaths => "NUL-separated tracked paths",
+            Self::Name => "name",
+        }
+    }
+}
+
 impl Command {
+    /// every command, in the order the help lists them. the help and the parsing both read this, so
+    /// a command can't be parsed without being listed, and a variant left out of it is never
+    /// constructed, which the gate's Clippy refuses.
+    const ALL: [Self; 4] = [Self::Links, Self::Names, Self::History, Self::Digest];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Links => "links",
+            Self::Names => "names",
+            Self::History => "history",
+            Self::Digest => "digest",
+        }
+    }
+
+    const fn input(self) -> Input {
+        match self {
+            Self::Links | Self::Names | Self::History => Input::TrackedPaths,
+            Self::Digest => Input::Name,
+        }
+    }
+
     fn parse(args: &[String]) -> Option<Self> {
         match args {
-            [command] => match command.as_str() {
-                "links" => Some(Self::Links),
-                "names" => Some(Self::Names),
-                "history" => Some(Self::History),
-                "digest" => Some(Self::Digest),
-                _ => None,
-            },
+            [command] => Self::ALL.into_iter().find(|c| c.name() == command),
             _ => None,
         }
     }
+}
+
+/// one usage line per kind of input, naming every command that reads it.
+fn usage() -> String {
+    let lines: Vec<String> = Input::ALL
+        .into_iter()
+        .filter_map(|input| {
+            let names: Vec<&str> = Command::ALL
+                .into_iter()
+                .filter(|command| command.input() == input)
+                .map(Command::name)
+                .collect();
+            let commands = match names.as_slice() {
+                [] => return None,
+                [one] => (*one).to_owned(),
+                many => format!("<{}>", many.join("|")),
+            };
+            Some(format!("repo-check {commands} < {}", input.describe()))
+        })
+        .collect();
+    format!("usage: {}", lines.join("\n       "))
 }
 
 /// 1-based line and byte column.
@@ -102,7 +153,7 @@ impl fmt::Display for Finding {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = Command::parse(&args) else {
-        eprintln!("{USAGE}");
+        eprintln!("{}", usage());
         return ExitCode::from(2);
     };
     let findings = match command {
@@ -254,6 +305,33 @@ mod tests {
         assert_eq!(parse(&["link"]), None);
         assert_eq!(parse(&[]), None);
         assert_eq!(parse(&["links", "names"]), None);
+    }
+
+    // the help is generated from the same table the parsing reads; this holds it to naming every
+    // command with what it reads, in a line of the shape the help has always had.
+    #[test]
+    fn the_help_names_every_command() {
+        let help = usage();
+        assert_eq!(
+            help,
+            "usage: repo-check <links|names|history> < NUL-separated tracked paths\n       \
+             repo-check digest < name"
+        );
+        for command in Command::ALL {
+            let line = help
+                .lines()
+                .find(|line| line.ends_with(command.input().describe()))
+                .unwrap_or_else(|| panic!("no help line for {}", command.name()));
+            let listed = line
+                .split(|c: char| !c.is_ascii_alphabetic() && c != '-')
+                .any(|word| word == command.name());
+            assert!(
+                listed,
+                "{} is missing from the help:\n{help}",
+                command.name()
+            );
+            assert_eq!(Command::parse(&[command.name().to_owned()]), Some(command));
+        }
     }
 
     #[test]
